@@ -5,6 +5,7 @@
 //! carry original IDs. Complete scalar nodal and element variables become
 //! numeric fields at selected time steps.
 
+mod header;
 mod read;
 mod write;
 

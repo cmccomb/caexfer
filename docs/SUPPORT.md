@@ -210,6 +210,9 @@ semantics. Gmsh 4.15.2 is used for independent input and output checks.
 
 Read/write the NetCDF-3 classic subset in pure Rust. NetCDF-4/HDF5, 64-bit
 integer maps, and files with larger classic variants are outside this reader.
+The reader checks classic header counts and byte lengths against the bounded
+input before passing them to the NetCDF decoder, so malformed declarations
+cannot request allocations based only on header metadata.
 The reader imports the seven linear cell families from element blocks, original
 node and element IDs from number maps, and complete scalar nodal and element
 variables at every time step or one selected zero-based `--step`. Missing maps
@@ -224,8 +227,9 @@ preserves original IDs through number maps, and reports that block identity is
 generated. Named sets and property IDs are reported and omitted by conversion.
 Multi-component fields fail until a declared
 component-name mapping exists. Output is capped at an estimated 256 MiB; the
-public library stages its output file. The fixture is generated with Unidata `ncgen`,
-and exported files have also been read by independent `ncdump` and meshio.
+public library stages its output file. The Exodus fixture is generated with
+Unidata `ncgen`, and exported files have also been read by independent
+`ncdump` and meshio.
 
 ### Abaqus/CalculiX INP
 
@@ -286,7 +290,9 @@ BDF, VTU, VTK, MSH, INP, or FRD. The companion carries no result fields; BDF and
 INP companions are not runnable solver decks. Each output is staged before
 either is installed, and existing output paths are never overwritten. Because
 two file installs cannot be atomic, a failed second install can leave the OP2
-file in place; the CLI error identifies it. Other fields and a nonzero source
+file in place. The library retains the completed companion at the staged path
+named in its error so it can be installed after the destination is checked.
+Other fields and a nonzero source
 step number are omitted with reports. A mesh-only BDF/INP cannot generate an OP2
 result from analysis. When converting a BDF or INP mesh to OP2, the CLI proposes
 a **synthetic** static table with T1/T2/T3/R1/R2/R3 all set to float
@@ -339,6 +345,11 @@ renames to replace existing regular output files after approval, including
 both outputs when `--mesh-out` is used. The CLI refuses symbolic-link and
 nonregular replacement destinations and input aliases. It rechecks both paths
 before installing a pair, but a race during installation can leave the first
-file replaced and the second unchanged. This is not a cross-platform
-transactional filesystem or guaranteed power-loss durability. The public
+file replaced and the second unchanged. In that case, the CLI keeps private
+recovery directories containing the staged companion and hard links to any
+previous destination files; its error names the retained paths. Inspect the
+current destinations before restoring or installing any recovery file. A
+concurrent in-place write can also change a hard-linked previous file. This is
+not a cross-platform transactional filesystem or guaranteed power-loss
+durability. The public
 `caexfer::convert` operation retains its staged, no-clobber policy.

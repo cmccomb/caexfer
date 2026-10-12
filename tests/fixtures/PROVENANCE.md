@@ -11,6 +11,17 @@ ASCII fixture following the CalculiX GraphiX result-format documentation.
 actual OP2 displacement decoding and mesh association. They retain the
 upstream three-clause BSD terms in `pyNastran-LICENSE.md`.
 
+`msc-plate.bdf` and `msc-plate.op2` come from pyNastran's `models/plate/`
+directory at the same commit. The BDF identifies Patran 2012 as its input
+translator and an MSC Nastran SOL 101 job; the OP2 contains that job's real
+displacements. Their original SHA-256 digests are
+`710f7bdd14492f30819e0b13cff85dc3013aa575dc377ff7f9de1a4c40e7fc5d`
+and `25d51e5305768b011596a2faa3903a618dd1653c6aeb52e5abe6cb375b04c615`.
+They retain the same upstream BSD terms. The OP2 interoperability check uses
+pyNastran to read both source files independently and compares node IDs,
+coordinates, element IDs, ordered topology, and all six displacement components
+against caexfer's VTU projection.
+
 `two-subcases.op2` and `two-steps.op2` are small authored fixtures generated
 with pyNastran 1.4.1. They contain only two GRID displacement rows per result
 step, with explicit values and times, to check independent OP2 decoding.
