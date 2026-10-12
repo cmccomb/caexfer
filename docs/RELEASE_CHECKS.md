@@ -12,7 +12,8 @@ These checks apply to each candidate release.
    exact source commit. Publish the crate, then verify its recorded source
    commit before tagging and creating the matching GitHub release.
 
-For 0.1.1, verify the MSC Nastran plate fixture provenance, upstream BSD
+For 0.2.0, verify the MSC Nastran plate fixture provenance, upstream BSD
 terms, and the pyNastran comparison of IDs, topology, and displacement values.
-Run the malformed Exodus header regression and check that measured line coverage
-remains above the 90% floor. Review the draft release notes before publishing.
+Run the malformed Exodus header regression and independent VTK/VTI exchange
+check. Confirm the explicit voxel mesh limits and measured line coverage above
+the 95% floor. Review the draft release notes before publishing.

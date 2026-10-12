@@ -13,6 +13,11 @@ use std::collections::BTreeMap;
 
 use super::{Cell, CellKind, Error, Mesh, Point, Result};
 
+// A bounded occupancy array can still expand into millions of heap-backed
+// points, cells, and map entries when projected as an explicit mesh.
+const MAX_MESH_VOXELS: usize = 250_000;
+const MAX_EXPOSED_FACES: usize = 250_000;
+
 /// A cell-centered, axis-aligned occupancy grid. Coordinates have the source's
 /// units; `origin` is the minimum corner of cell `[0, 0, 0]`.
 #[derive(Debug, Clone, PartialEq)]
@@ -127,6 +132,12 @@ impl VoxelGrid {
     /// shared through common point indices.
     pub fn volume_mesh(&self) -> Result<Mesh> {
         self.validate()?;
+        if self.occupied.iter().filter(|&&value| value != 0).count() > MAX_MESH_VOXELS {
+            return Err(Error::new(
+                "E_VOXEL",
+                "voxel volume exceeds the 250,000-cell explicit mesh limit",
+            ));
+        }
         let mut mesh = Mesh::default();
         let mut corners = BTreeMap::new();
         const OFFSETS: [[usize; 3]; 8] = [
@@ -174,6 +185,44 @@ impl VoxelGrid {
     /// Emit only exposed voxel faces as outward-wound triangles for STL.
     pub fn surface_mesh(&self) -> Result<Mesh> {
         self.validate()?;
+        let mut exposed = 0usize;
+        for z in 0..self.dims[2] {
+            for y in 0..self.dims[1] {
+                for x in 0..self.dims[0] {
+                    if self.occupied[self.index([x, y, z])] == 0 {
+                        continue;
+                    }
+                    for direction in [
+                        [-1, 0, 0],
+                        [1, 0, 0],
+                        [0, -1, 0],
+                        [0, 1, 0],
+                        [0, 0, -1],
+                        [0, 0, 1],
+                    ] {
+                        let neighbor = [
+                            x as isize + direction[0],
+                            y as isize + direction[1],
+                            z as isize + direction[2],
+                        ];
+                        if !neighbor
+                            .iter()
+                            .enumerate()
+                            .all(|(axis, &v)| v >= 0 && v < self.dims[axis] as isize)
+                            || self.occupied[self.index(neighbor.map(|v| v as usize))] == 0
+                        {
+                            exposed += 1;
+                            if exposed > MAX_EXPOSED_FACES {
+                                return Err(Error::new(
+                                    "E_VOXEL",
+                                    "voxel surface exceeds the 250,000-face explicit mesh limit",
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let mut mesh = Mesh::default();
         let mut corners = BTreeMap::new();
         // Face corner offsets are wound outward for each of the six sides.
@@ -285,6 +334,15 @@ impl VoxelGrid {
                 "surface is open or nonmanifold after exact-coordinate welding",
             ));
         }
+        if triangles
+            .iter()
+            .any(|triangle| triangle_is_degenerate(*triangle))
+        {
+            return Err(Error::new(
+                "E_VOXEL",
+                "surface contains a zero-area or nonfinite triangle",
+            ));
+        }
         let mut dims = [0; 3];
         for axis in 0..3 {
             let n = ((maximum[axis] - minimum[axis]) / spacing).ceil();
@@ -300,6 +358,7 @@ impl VoxelGrid {
             .ok_or_else(|| Error::new("E_VOXEL", "voxel grid exceeds 2,000,000 cells"))?;
         if count
             .checked_mul(triangles.len())
+            .and_then(|work| work.checked_mul(3))
             .is_none_or(|work| work > 100_000_000)
         {
             return Err(Error::new(
@@ -319,10 +378,9 @@ impl VoxelGrid {
                     let center = std::array::from_fn(|axis| {
                         (0.5_f64).mul_add(spacing, grid.corner([x, y, z])[axis])
                     });
-                    let mut inside = false;
-                    // Odd intersection count along a generic, fixed direction. Edge
-                    // coincidences are retried with two other deterministic directions.
-                    let mut resolved = false;
+                    let mut inside = None;
+                    // Compare three deterministic directions; discard edge hits,
+                    // and reject any conflicting unambiguous parity results.
                     for direction in [
                         [1.0, 0.371, 0.529],
                         [0.431, 1.0, 0.613],
@@ -341,17 +399,22 @@ impl VoxelGrid {
                             }
                         }
                         if !ambiguous {
-                            inside = hits % 2 == 1;
-                            resolved = true;
-                            break;
+                            let result = hits % 2 == 1;
+                            if inside.is_some_and(|previous| previous != result) {
+                                return Err(Error::new(
+                                    "E_VOXEL",
+                                    "surface rays disagree about inside/outside at a voxel center",
+                                ));
+                            }
+                            inside = Some(result);
                         }
                     }
-                    if !resolved {
+                    let Some(inside) = inside else {
                         return Err(Error::new(
                             "E_VOXEL",
                             "ray intersects a surface edge for every sampling direction",
                         ));
-                    }
+                    };
                     if inside {
                         let index = grid.index([x, y, z]);
                         grid.occupied[index] = 1;
@@ -372,6 +435,17 @@ impl VoxelGrid {
 
 fn coordinate_bits(value: f64) -> u64 {
     if value == 0.0 { 0 } else { value.to_bits() }
+}
+
+fn triangle_is_degenerate(triangle: [[f64; 3]; 3]) -> bool {
+    let u = std::array::from_fn::<_, 3, _>(|axis| triangle[1][axis] - triangle[0][axis]);
+    let v = std::array::from_fn::<_, 3, _>(|axis| triangle[2][axis] - triangle[0][axis]);
+    let cross = [
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ];
+    cross.iter().any(|value| !value.is_finite()) || cross.iter().all(|&value| value == 0.0)
 }
 
 /// Extract the external faces of linear volume cells, or triangulate a pure
@@ -628,6 +702,40 @@ mod tests {
         invalid.origin[0] = f64::MAX;
         invalid.spacing = f64::MAX;
         assert_eq!(invalid.validate().unwrap_err().code, "E_VOXEL");
+    }
+
+    #[test]
+    fn explicit_mesh_limits_reject_large_expansions_before_allocating() {
+        let filled = VoxelGrid {
+            origin: [0.0; 3],
+            spacing: 1.0,
+            dims: [MAX_MESH_VOXELS + 1, 1, 1],
+            occupied: vec![1; MAX_MESH_VOXELS + 1],
+        };
+        assert!(
+            filled
+                .volume_mesh()
+                .unwrap_err()
+                .message
+                .contains("explicit mesh limit")
+        );
+
+        let mut alternating = filled;
+        for (index, value) in alternating.occupied.iter_mut().enumerate() {
+            *value = u8::from(index % 2 == 0);
+        }
+        assert!(
+            alternating
+                .surface_mesh()
+                .unwrap_err()
+                .message
+                .contains("explicit mesh limit")
+        );
+        assert!(triangle_is_degenerate([
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0]
+        ]));
     }
 
     #[test]

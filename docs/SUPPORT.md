@@ -141,10 +141,14 @@ stores neither physical origin nor spacing: imported models use origin zero
 and unit spacing, while export reports omitted origin/spacing. Export uses
 color index 1 for every occupied cell.
 
-Both formats use binary occupancy, capped at 2,000,000 cells. Mesh conversion
-samples a closed, exactly coordinate-welded triangle/quad boundary at voxel
-centers. Open or nonmanifold surfaces fail; intersecting or geometrically
-degenerate surfaces are not repaired. External volume faces are extracted from
+Both formats use binary occupancy, capped at 2,000,000 cells. The public file
+API projects voxel input into an explicit mesh, so input with more than 250,000
+occupied cells fails before that projection allocates points and cells. STL
+surface output additionally rejects more than 250,000 exposed voxel faces.
+Mesh conversion samples a closed, exactly coordinate-welded triangle/quad boundary at voxel
+centers. Open, nonmanifold, and zero-area surfaces fail. Intersecting surfaces
+are not repaired; parity sampling can give unexpected occupancy where closed
+components overlap. External volume faces are extracted from
 Tet4, Hex8, Wedge6, and Pyramid5 cells. Grid-to-volume output emits Hex8 cells
 with shared corners; grid-to-STL emits exposed faces as two triangles each.
 Fine details, fields, material IDs, and original mesh identity are not preserved.
