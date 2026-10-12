@@ -54,6 +54,58 @@ def main() -> None:
             assert 'CAEXFER ASSUMED ZERO DISPLACEMENT' in result.title
             assert (result.data == 0).all()
 
+    def qualify_solver_plate(folder: Path) -> None:
+        """Compare a solver-produced BDF/OP2 pair against independent readers."""
+        from pyNastran.bdf.bdf import read_bdf
+        from pyNastran.op2.op2 import read_op2
+
+        source_bdf = ROOT / 'tests/fixtures/msc-plate.bdf'
+        source_op2 = ROOT / 'tests/fixtures/msc-plate.op2'
+        with contextlib.redirect_stdout(io.StringIO()):
+            mesh = read_bdf(str(source_bdf), xref=False)
+            results = read_op2(str(source_op2), build_dataframe=False, debug=False,
+                               include_results=['displacements'])
+        assert list(results.displacements) == [1]
+        displacement = results.displacements[1]
+        result_rows = {int(node): row for node, row in
+                       zip(displacement.node_gridtype[:, 0], displacement.data[0])}
+
+        target = folder / 'msc-plate.vtu'
+        run('convert', source_op2, target, '--mesh', source_bdf, '--accept-all')
+        piece = ET.parse(target).find('./UnstructuredGrid/Piece')
+        assert piece is not None
+
+        def array(xpath: str, cast: type = int) -> list:
+            item = piece.find(xpath)
+            assert item is not None
+            return [cast(value) for value in (item.text or '').split()]
+
+        node_ids = array("./PointData/DataArray[@Name='nastran_node_id']")
+        cell_ids = array("./CellData/DataArray[@Name='nastran_element_id']")
+        positions = array('./Points/DataArray', float)
+        connectivity = array("./Cells/DataArray[@Name='connectivity']")
+        offsets = array("./Cells/DataArray[@Name='offsets']")
+        kinds = array("./Cells/DataArray[@Name='types']")
+        values = array("./PointData/DataArray[@Name='DISPLACEMENT_SUBCASE_1']", float)
+
+        assert node_ids == sorted(mesh.nodes) == sorted(result_rows)
+        assert cell_ids == sorted(mesh.elements)
+        assert len(positions) == 3 * len(node_ids)
+        assert len(values) == 6 * len(node_ids)
+        for index, node in enumerate(node_ids):
+            expected_position = mesh.nodes[node].get_position()
+            assert all(abs(actual - expected) < 1e-12 for actual, expected in
+                       zip(positions[3 * index:3 * index + 3], expected_position))
+            assert all(abs(actual - expected) < 1e-7 for actual, expected in
+                       zip(values[6 * index:6 * index + 6], result_rows[node]))
+        start = 0
+        for index, element_id in enumerate(cell_ids):
+            element = mesh.elements[element_id]
+            assert element.type == 'CQUAD4' and kinds[index] == 9
+            assert [node_ids[point] for point in connectivity[start:offsets[index]]] == element.nodes
+            start = offsets[index]
+        assert start == len(connectivity)
+
     def run(*args: object, code: int = 0) -> dict:
         """Run one JSON CLI command and require the expected process status."""
         result = subprocess.run([str(binary), *map(str, args), '--json'],
@@ -76,6 +128,7 @@ def main() -> None:
         sources['msh22'] = msh22
         sources['pch'] = ROOT / 'tests/fixtures/pch-multiple.pch'
         if options.op2_check:
+            qualify_solver_plate(folder)
             sources['op2'] = ROOT / 'tests/fixtures/solid_bending.op2'
         routes = 0
         for source_format, source in sources.items():

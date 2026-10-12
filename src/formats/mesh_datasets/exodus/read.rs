@@ -403,6 +403,7 @@ pub fn read_projection(source: &[u8], selected_step: Option<usize>) -> Result<Pr
     if source.len() < 4 || &source[..3] != b"CDF" || source[3] != 1 {
         return Err(err("only NetCDF-3 classic Exodus files are supported"));
     }
+    super::header::check(source)?;
     let mut reader = FileReader::open_seek_read("exodus", Box::new(Cursor::new(source.to_vec())))
         .map_err(|error| err(format!("invalid NetCDF-3 file: {error:?}")))?;
     let data = reader.data_set();
