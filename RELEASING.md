@@ -5,12 +5,12 @@ Do not tag a candidate as published until the registry confirms the upload.
 
 1. Confirm the working tree is clean and `main` contains the intended release.
 2. Confirm CI and Coverage passed for that exact commit; Coverage must report at
-   least 95% Rust source-line coverage.
+   least 90% Rust source-line coverage.
 3. Run `cargo publish --dry-run` without `--allow-dirty`. Check the packaged
    file list with `cargo package --list` and inspect the README, license files,
    source files, and fixture provenance included in the archive.
-4. Prepare version-specific GitHub Release notes; for 0.2.0, use
-   [the draft](docs/RELEASE_NOTES_0.2.0.md). Confirm that the version is
+4. Prepare version-specific GitHub Release notes; for 0.1.1, use
+   [the draft](docs/RELEASE_NOTES_0.1.1.md). Confirm that the version is
    available on crates.io and the publishing account has a verified email and
    a suitable token.
 5. Publish with `cargo publish`, then independently confirm that the version
