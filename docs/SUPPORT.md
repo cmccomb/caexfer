@@ -184,6 +184,9 @@ semantics. Gmsh 4.15.2 is used for independent input and output checks.
 
 Read/write the NetCDF-3 classic subset in pure Rust. NetCDF-4/HDF5, 64-bit
 integer maps, and files with larger classic variants are outside this reader.
+The reader checks classic header counts and byte lengths against the bounded
+input before passing them to the NetCDF decoder, so malformed declarations
+cannot request allocations based only on header metadata.
 The reader imports the seven linear cell families from element blocks, original
 node and element IDs from number maps, and complete scalar nodal and element
 variables at every time step or one selected zero-based `--step`. Missing maps
@@ -198,8 +201,9 @@ preserves original IDs through number maps, and reports that block identity is
 generated. Named sets and property IDs are reported and omitted by conversion.
 Multi-component fields fail until a declared
 component-name mapping exists. Output is capped at an estimated 256 MiB; the
-public library stages its output file. The fixture is generated with Unidata `ncgen`,
-and exported files have also been read by independent `ncdump` and meshio.
+public library stages its output file. The Exodus fixture is generated with
+Unidata `ncgen`, and exported files have also been read by independent
+`ncdump` and meshio.
 
 ### Abaqus/CalculiX INP
 

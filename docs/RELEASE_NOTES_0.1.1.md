@@ -9,6 +9,9 @@ Paired installation is still not atomic, and concurrent in-place writes can
 change a hard-linked previous file.
 
 The release also clarifies the publishing procedure and the support contract.
-Format support and the public conversion API remain the same as 0.1.0.
+It rejects malformed NetCDF-3 header counts before the Exodus dependency can
+allocate from them, and adds an MSC Nastran plate fixture checked against an
+independent reader. Format support and the public conversion API remain the
+same as 0.1.0.
 
 Requires Rust 1.86 or newer.

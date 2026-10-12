@@ -12,7 +12,7 @@ These checks apply to each candidate release.
    exact source commit. Publish the crate, then verify its recorded source
    commit before tagging and creating the matching GitHub release.
 
-For 0.1.1, retain the planned independently produced solver fixtures with
-redistribution permission, provenance, and external-reader comparisons. Review
-the draft release notes and check that measured line coverage remains above the
-90% floor after the recovery tests are added.
+For 0.1.1, verify the MSC Nastran plate fixture provenance, upstream BSD
+terms, and the pyNastran comparison of IDs, topology, and displacement values.
+Run the malformed Exodus header regression and check that measured line coverage
+remains above the 90% floor. Review the draft release notes before publishing.
