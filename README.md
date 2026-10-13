@@ -148,3 +148,29 @@ The optional `--smooth-iterations N` (1–50) moves shared surface vertices with
 paired smoothing passes when exporting VTI or VOX to STL. It rounds the voxel
 steps but can soften small features and does not recover detail lost during
 voxelization. Without this option, STL output follows voxel boundaries exactly.
+
+### Surface ↔ volume round-trip check
+
+The same donut was converted to Tet4 volume meshes with Gmsh 4.15.2 and back
+to STL. The 0.5 voxel result is shown at the same camera and scale for
+comparison. Every output shell is watertight and retains the hole.
+
+![Oblique and top views of the original donut, two Tet4 round trips, and a Hex8 voxel round trip](assets/roundtrip-v0.3.0.png)
+
+| Route | Volume cells | Output triangles | Enclosed volume change | Surface distance p95 |
+| --- | ---: | ---: | ---: | ---: |
+| Tet4, target size 0.5 | 1,407 | 922 | −4.57% | 0.039 |
+| Tet4, target size 0.25 | 10,605 | 3,488 | −1.12% | 0.011 |
+| Hex8 voxels, size 0.5 | 238 | 864 | +2.35% | 0.227 |
+
+Surface distance is the 95th percentile of bidirectional point-to-triangle
+distances from 5,000 seeded samples per surface in each direction; coordinates
+retain the input STL's unspecified units. Cell counts and IDs change with
+remeshing. As a separate volume → surface → volume check, a cube began with
+196 Tet4 cells and returned with 298; its boundary stayed on the same six
+planes and its enclosed volume remained 1.0.
+
+```sh
+caexfer convert examples/donut.stl donut-tets.vtu --tetrahedralize --tet-size 0.25 --accept-omissions
+caexfer convert donut-tets.vtu donut-tets-roundtrip.stl --accept-omissions
+```
