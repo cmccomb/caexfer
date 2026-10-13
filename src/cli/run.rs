@@ -10,6 +10,7 @@ use super::common::emit;
 use super::convert::run_convert;
 use super::help;
 use super::json::{object, quote};
+use super::preview::run_preview;
 use super::validate::run_validate;
 
 /// Dispatch the parsed CLI command and return its process exit status.
@@ -42,6 +43,9 @@ fn dispatch(args: &Args) -> Result<u8> {
     if args.command == "convert" {
         return run_convert(args);
     }
+    if args.command == "preview" {
+        return run_preview(args);
+    }
     run_validate(args)
 }
 
@@ -49,10 +53,9 @@ fn dispatch(args: &Args) -> Result<u8> {
 pub(crate) fn run() {
     // Retain JSON error formatting even when argument parsing itself fails.
     let raw: Vec<OsString> = std::env::args_os().skip(1).collect();
-    let wants_json = raw
-        .first()
-        .is_some_and(|command| command == "validate" || command == "convert")
-        && raw.iter().any(|arg| arg == "--json");
+    let wants_json = raw.first().is_some_and(|command| {
+        command == "validate" || command == "convert" || command == "preview"
+    }) && raw.iter().any(|arg| arg == "--json");
     let status = match parse_args(&raw).and_then(|args| dispatch(&args)) {
         Ok(status) => status,
         Err(error) => {

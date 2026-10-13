@@ -7,12 +7,13 @@
 mod format;
 mod read;
 mod report;
+mod tetra;
 mod write;
 
 #[cfg(test)]
 mod tests;
 
-pub use format::{Format, Options};
+pub use format::{Format, InfillShape, Options};
 pub use read::read_path;
 pub use report::{AssumptionKind, CompanionReport, ConversionReport, Omission, ReadResult, Stage};
 pub use write::convert;

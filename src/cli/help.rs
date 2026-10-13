@@ -11,6 +11,7 @@ USAGE
 
 COMMANDS
   validate  Check supported data, counts, and omissions
+  preview   Inspect a proposed conversion without writing output
   convert   Write a supported projection to an output file
 
 Run 'caexfer COMMAND --help' for options and examples.
@@ -61,12 +62,14 @@ INPUT OPTIONS
 
 DESTINATION OPTIONS
   --msh-version 2.2|4.1      MSH output dialect (default: 4.1)
-  --voxel-size N             Cubic cell size for mesh/STL to VTI/VOX, or STL to volume mesh
-  --match-grid FILE          Sample on an existing VTI grid; supplies voxel size
+  --infill-shape SHAPE       Closed-surface volume cells: tet4|hex8|wedge6|pyramid5
+  --infill-unit-size N       Positive target edge/grid size; required with --infill-shape
+  --match-grid FILE          Sample on an existing VTI grid using hex8 infill
+  --surface                  Extract external triangles from a volume mesh
+  --gmsh FILE                Gmsh executable for tet4 infill (default: gmsh on PATH)
   --smooth-iterations N      Smooth VTI/VOX to STL surface (1-50 cycles; default: off)
   --mesh-out FILE            Write a companion mesh alongside OP2 output
   --overwrite                Replace existing regular output files
-  --preview                  Inspect conversion and voxel work without writing output
 
 ACCEPTANCE OPTIONS
   --accept-omissions        Accept reported source and destination losses
@@ -91,12 +94,54 @@ EXAMPLES
   caexfer convert model.bdf model.vtu
   caexfer convert results.op2 results.vtu --mesh model.bdf
   caexfer convert model.msh model-2.2.msh --msh-version 2.2
+  caexfer convert volume.vtu shell.vtu --surface --accept-omissions
+  caexfer convert shell.vtu volume.vtu --infill-shape hex8 --infill-unit-size 0.5 --accept-omissions
+  caexfer convert shell.vtu tets.vtu --infill-shape tet4 --infill-unit-size 0.5 --accept-omissions
+  caexfer convert shell.vtu wedges.vtu --infill-shape wedge6 --infill-unit-size 0.5 --accept-omissions
+";
+
+/// Explain the read-only route with the same source and destination choices.
+const PREVIEW: &str = "caexfer preview: inspect a proposed conversion without writing output
+
+USAGE
+  caexfer preview INPUT OUTPUT [OPTIONS]
+
+INPUT OPTIONS
+  --from FORMAT              Override the input extension; see 'caexfer --formats'
+  --max-bytes N              Limit input size in bytes (default: 268435456 / 256 MiB)
+  --mesh FILE                Companion mesh for OP2/PCH results
+  --subcase N                Select an OP2/PCH displacement subcase
+  --step N                   Select OP2/PCH/Exodus step by zero-based index, or FRD step number
+
+DESTINATION OPTIONS
+  --msh-version 2.2|4.1      MSH output dialect (default: 4.1)
+  --infill-shape SHAPE       Volume cells: tet4|hex8|wedge6|pyramid5
+  --infill-unit-size N       Positive target edge/grid size; required with --infill-shape
+  --match-grid FILE          Sample on an existing VTI grid using hex8 infill
+  --surface                  Extract external triangles from a volume mesh
+  --gmsh FILE                Gmsh executable for tet4 infill (default: gmsh on PATH)
+  --smooth-iterations N      Smooth VTI/VOX to STL surface (1-50 cycles; default: off)
+  --mesh-out FILE            Inspect an OP2 companion mesh projection
+
+GENERAL OPTIONS
+  -j, --json                 Return the plan as JSON (schema_version=1)
+  -h, --help                 Show this command's help
+
+Voxelization reports grid dimensions, cell count, and sampler work without
+building occupancy. Other routes run a complete projection into a discard
+stream and may take as long as conversion. No output file is created.
+
+EXAMPLES
+  caexfer preview model.bdf model.vtu
+  caexfer preview examples/donut.stl donut.vti --infill-shape hex8 --infill-unit-size 0.25
+  caexfer preview other.stl aligned.vti --match-grid donut.vti
 ";
 
 /// Return the help for the selected command; parsing ensures it is recognized.
 pub(super) fn for_command(command: &str) -> &'static str {
     match command {
         "validate" => VALIDATE,
+        "preview" => PREVIEW,
         "convert" => CONVERT,
         _ => OVERVIEW,
     }

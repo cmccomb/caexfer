@@ -55,7 +55,7 @@ impl VoxelEstimate {
         if self.triangle_checks > 100_000_000 {
             return Err(Error::new(
                 "E_VOXEL",
-                "voxel sampling exceeds 100 million triangle checks; increase --voxel-size or simplify the surface",
+                "voxel sampling exceeds 100 million triangle checks; increase --infill-unit-size or simplify the surface",
             ));
         }
         Ok(())
@@ -291,6 +291,74 @@ impl VoxelGrid {
         Ok(mesh)
     }
 
+    /// Emit conforming Hex8, Wedge6, or Pyramid5 cells from occupied grid cells.
+    /// Wedges split each cube along the same vertical diagonal; pyramids meet
+    /// at one new cube-center point. The outside boundary remains voxelized.
+    pub(crate) fn volume_mesh_as(&self, kind: CellKind) -> Result<Mesh> {
+        let factor = match kind {
+            CellKind::Hex8 => 1,
+            CellKind::Wedge6 => 2,
+            CellKind::Pyramid5 => 6,
+            _ => return Err(Error::new("E_VOXEL", "unsupported grid infill cell shape")),
+        };
+        self.validate()?;
+        if self.occupied.iter().filter(|&&value| value != 0).count() > MAX_MESH_VOXELS / factor {
+            return Err(Error::new(
+                "E_VOXEL",
+                "infill exceeds the 250,000-cell explicit mesh limit",
+            ));
+        }
+        let mut mesh = self.volume_mesh()?;
+        if kind == CellKind::Hex8 {
+            return Ok(mesh);
+        }
+        let hexes = std::mem::take(&mut mesh.cells);
+        for hex in hexes {
+            let c = hex.connectivity;
+            if kind == CellKind::Wedge6 {
+                for local in [[0, 1, 2, 4, 5, 6], [0, 2, 3, 4, 6, 7]] {
+                    mesh.cells.push(Cell {
+                        id: (mesh.cells.len() + 1) as u64,
+                        kind,
+                        connectivity: local.map(|index| c[index]).to_vec(),
+                        property_id: None,
+                    });
+                }
+            } else {
+                let center = std::array::from_fn(|axis| {
+                    c.iter()
+                        .map(|&index| mesh.points[index].position[axis])
+                        .sum::<f64>()
+                        / 8.0
+                });
+                let apex = mesh.points.len();
+                mesh.points.push(Point {
+                    id: (apex + 1) as u64,
+                    position: center,
+                });
+                for base in [
+                    [0, 1, 2, 3],
+                    [4, 7, 6, 5],
+                    [0, 4, 5, 1],
+                    [1, 5, 6, 2],
+                    [2, 6, 7, 3],
+                    [3, 7, 4, 0],
+                ] {
+                    let mut connectivity: Vec<usize> = base.map(|index| c[index]).to_vec();
+                    connectivity.push(apex);
+                    mesh.cells.push(Cell {
+                        id: (mesh.cells.len() + 1) as u64,
+                        kind,
+                        connectivity,
+                        property_id: None,
+                    });
+                }
+            }
+        }
+        mesh.validate()?;
+        Ok(mesh)
+    }
+
     /// Emit only exposed voxel faces as outward-wound triangles for STL.
     pub fn surface_mesh(&self) -> Result<Mesh> {
         self.validate()?;
@@ -516,7 +584,7 @@ impl VoxelGrid {
         if grid.occupied.iter().all(|&value| value == 0) {
             return Err(Error::new(
                 "E_VOXEL",
-                "no voxel centers fall inside the surface; reduce --voxel-size",
+                "no voxel centers fall inside the surface; reduce --infill-unit-size",
             ));
         }
         Ok(grid)
@@ -803,6 +871,28 @@ mod tests {
         assert_eq!(estimate.dims, [200, 200, 200]);
         assert_eq!(estimate.cells, 8_000_000);
         assert!(estimate.check_limits().is_err());
+    }
+
+    #[test]
+    fn grid_infill_shapes_keep_the_same_closed_outer_boundary() {
+        let grid = VoxelGrid {
+            origin: [0.0; 3],
+            spacing: 1.0,
+            dims: [2, 1, 1],
+            occupied: vec![1, 1],
+        };
+        for (kind, cells) in [
+            (CellKind::Hex8, 2),
+            (CellKind::Wedge6, 4),
+            (CellKind::Pyramid5, 12),
+        ] {
+            let mesh = grid.volume_mesh_as(kind).unwrap();
+            assert_eq!(mesh.cells.len(), cells);
+            assert!(mesh.cells.iter().all(|cell| cell.kind == kind));
+            let shell = boundary_surface(&mesh).unwrap();
+            assert_eq!(shell.cells.len(), 20);
+            assert_eq!(VoxelGrid::from_surface(&shell, 1.0).unwrap(), grid);
+        }
     }
 
     #[test]

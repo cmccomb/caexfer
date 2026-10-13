@@ -111,7 +111,7 @@ fn validation_json_has_version_and_counts() {
 #[test]
 fn conversion_preview_shows_exact_notices_without_writing() {
     let s = Scratch::new();
-    let result = s.run(&["convert", "mesh.bdf", "mesh.vtu", "--preview", "--json"]);
+    let result = s.run(&["preview", "mesh.bdf", "mesh.vtu", "--json"]);
     assert!(result.status.success());
     let output = String::from_utf8(result.stdout).unwrap();
     assert!(output.contains("\"operation\":\"conversion-preview\""));
@@ -126,12 +126,13 @@ fn voxel_preview_reports_dimensions_without_writing() {
     let s = Scratch::new();
     let input = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/donut.stl");
     let result = s.run(&[
-        "convert",
+        "preview",
         input,
         "donut.vti",
-        "--voxel-size",
+        "--infill-shape",
+        "hex8",
+        "--infill-unit-size",
         "0.25",
-        "--preview",
         "--json",
     ]);
     assert!(result.status.success());
@@ -175,6 +176,119 @@ fn geometry_conversion_creates_vtu_and_reports_losses() {
             .contains("nastran_node_id")
     );
     assert_eq!(std::fs::read_dir(&s.0).unwrap().count(), 2);
+}
+
+/// Exercise the public CLI's volume-to-surface-to-volume mesh route.
+#[test]
+#[allow(clippy::too_many_lines)] // One closed shell exercises all infill routes.
+fn surface_and_volume_mesh_flags_convert_closed_geometry() {
+    let s = Scratch::new();
+    std::fs::write(
+        s.0.join("cube.bdf"),
+        b"GRID,1,,0.,0.,0.\nGRID,2,,1.,0.,0.\nGRID,3,,1.,1.,0.\nGRID,4,,0.,1.,0.\nGRID,5,,0.,0.,1.\nGRID,6,,1.,0.,1.\nGRID,7,,1.,1.,1.\nGRID,8,,0.,1.,1.\nCHEXA,1,7,1,2,3,4,5,6\n+,7,8\n",
+    )
+    .unwrap();
+    let shell = s.run(&[
+        "convert",
+        "cube.bdf",
+        "shell.vtu",
+        "--surface",
+        "--accept-omissions",
+        "--json",
+    ]);
+    assert!(
+        shell.status.success(),
+        "stdout: {}; stderr: {}",
+        String::from_utf8_lossy(&shell.stdout),
+        String::from_utf8_lossy(&shell.stderr)
+    );
+    assert!(s.0.join("shell.vtu").exists());
+    let rebuilt = s.run(&[
+        "convert",
+        "shell.vtu",
+        "rebuilt.vtu",
+        "--infill-shape",
+        "hex8",
+        "--infill-unit-size",
+        "0.5",
+        "--accept-omissions",
+        "--json",
+    ]);
+    assert!(
+        rebuilt.status.success(),
+        "{}",
+        String::from_utf8_lossy(&rebuilt.stderr)
+    );
+    let validated = s.run(&["validate", "rebuilt.vtu", "--json"]);
+    assert!(validated.status.success());
+    assert!(
+        String::from_utf8(validated.stdout)
+            .unwrap()
+            .contains("\"cells\":8")
+    );
+
+    for (shape, cells) in [("hex8", 8), ("wedge6", 16), ("pyramid5", 48)] {
+        let name = format!("{shape}.vtu");
+        let output = s.run(&[
+            "convert",
+            "shell.vtu",
+            &name,
+            "--infill-shape",
+            shape,
+            "--infill-unit-size",
+            "0.5",
+            "--accept-omissions",
+            "--json",
+        ]);
+        assert!(
+            output.status.success(),
+            "{shape}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report = String::from_utf8(output.stdout).unwrap();
+        assert!(report.contains(&format!("\"cells\":{cells}")), "{report}");
+        assert!(s.run(&["validate", &name]).status.success());
+    }
+
+    let missing_mesher = s.run(&[
+        "convert",
+        "shell.vtu",
+        "missing-tets.vtu",
+        "--infill-shape",
+        "tet4",
+        "--infill-unit-size",
+        "0.5",
+        "--gmsh",
+        "/caexfer/nonexistent/gmsh",
+        "--accept-omissions",
+    ]);
+    assert!(!missing_mesher.status.success());
+    assert!(!s.0.join("missing-tets.vtu").exists());
+
+    if let Ok(gmsh) = std::env::var("CAEXFER_GMSH") {
+        let tets = s.run(&[
+            "convert",
+            "shell.vtu",
+            "tets.vtu",
+            "--infill-shape",
+            "tet4",
+            "--infill-unit-size",
+            "0.5",
+            "--gmsh",
+            &gmsh,
+            "--accept-omissions",
+        ]);
+        assert!(
+            tets.status.success(),
+            "stdout: {}; stderr: {}",
+            String::from_utf8_lossy(&tets.stdout),
+            String::from_utf8_lossy(&tets.stderr)
+        );
+        let tet_mesh = std::fs::read_to_string(s.0.join("tets.vtu")).unwrap();
+        assert!(tet_mesh.contains("connectivity"));
+        assert!(tet_mesh.contains("types"));
+        assert!(s.run(&["validate", "tets.vtu"]).status.success());
+    }
 }
 
 /// Protect an input file even when selected as the output path.

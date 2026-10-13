@@ -3,7 +3,7 @@
 use std::io::sink;
 use std::path::Path;
 
-use crate::conversion::{self, ConversionReport, Format, Omission, Options};
+use crate::conversion::{self, ConversionReport, Format, InfillShape, Omission, Options};
 use crate::core::{Error, Result, VoxelEstimate, VoxelGrid, boundary_surface};
 
 use super::convert::propose_synthetic_zero;
@@ -61,10 +61,10 @@ pub fn preview(
             "mesh_output applies only to OP2 output",
         ));
     }
-    if options.match_grid.is_some() && options.voxel_size.is_some() {
+    if options.match_grid.is_some() && options.infill_shape.is_some() {
         return Err(Error::new(
             "E_USAGE",
-            "match_grid supplies voxel size; omit voxel_size",
+            "match_grid supplies hex8 infill size; omit infill flags",
         ));
     }
     let source_format = options
@@ -103,26 +103,37 @@ pub fn preview(
         mesh_output: None,
     };
     let mesh_to_grid = matches!(target, Format::Vti | Format::Vox) && source.voxel_grid.is_none();
-    let stl_to_volume = source.format == Format::Stl
+    let surface_to_grid_volume = source
+        .dataset
+        .mesh
+        .cells
+        .iter()
+        .all(|cell| cell.kind.dimension() == 2)
+        && !source.dataset.mesh.cells.is_empty()
         && !matches!(
             target,
             Format::Stl | Format::Vti | Format::Vox | Format::Op2 | Format::Pch
         )
-        && (options.voxel_size.is_some() || options.match_grid.is_some());
-    if options.match_grid.is_some() && !(mesh_to_grid || stl_to_volume) {
+        && (matches!(
+            options.infill_shape,
+            Some(InfillShape::Hex8 | InfillShape::Wedge6 | InfillShape::Pyramid5)
+        ) || options.match_grid.is_some());
+    if options.match_grid.is_some() && !(mesh_to_grid || surface_to_grid_volume) {
         return Err(Error::new(
             "E_USAGE",
             "--match-grid applies to mesh voxelization only",
         ));
     }
-    if (mesh_to_grid || stl_to_volume)
-        && (options.voxel_size.is_some() || options.match_grid.is_some())
+    if (mesh_to_grid || surface_to_grid_volume)
+        && (options.infill_shape == Some(InfillShape::Hex8)
+            || surface_to_grid_volume
+            || options.match_grid.is_some())
     {
         let reference = conversion::load_match_grid(options)?;
         let spacing = options
-            .voxel_size
+            .infill_unit_size
             .or_else(|| reference.as_ref().map(|grid| grid.spacing))
-            .ok_or_else(|| Error::new("E_USAGE", "missing voxel size"))?;
+            .ok_or_else(|| Error::new("E_USAGE", "missing infill unit size"))?;
         let mesh = &source.dataset.mesh;
         let surface = if mesh.cells.iter().any(|cell| cell.kind.dimension() == 3) {
             boundary_surface(mesh)?

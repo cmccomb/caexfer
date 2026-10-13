@@ -71,15 +71,17 @@ requires its matching option: `assume_basic_frame`, `zero_missing_rotations`, or
 override parsing, coordinate-system, representability, or I/O errors.
 
 For voxel output, `ConversionReport.voxel_grid` contains the grid dimensions
-and occupied cell count. Mesh or STL input needs an explicit `voxel_size`;
+and occupied cell count. Mesh or STL input needs `infill_shape: Some(InfillShape::Hex8)`
+and an explicit `infill_unit_size`;
 VTI/VOX input already defines a grid. For example:
 
 ```rust
-use caexfer::{Options, Result, convert};
+use caexfer::{InfillShape, Options, Result, convert};
 
 fn main() -> Result<()> {
     let report = convert("examples/donut.stl", "donut.vti", &Options {
-        voxel_size: Some(0.25),
+        infill_shape: Some(InfillShape::Hex8),
+        infill_unit_size: Some(0.25),
         accept_omissions: true,
         ..Options::default()
     })?;
@@ -97,17 +99,18 @@ also omits physical origin and spacing; check `report.omissions` before using
 the output as geometry at a particular scale.
 
 `Options.match_grid` can name a supported VTI occupancy file. Its origin,
-spacing, and dimensions become the mesh voxelization grid; `voxel_size` must
+spacing, and dimensions become the mesh voxelization grid; infill flags must
 be omitted. The source surface must fit entirely within the reference bounds.
 The reference occupancy values are not copied. `preview` checks this geometry
 and estimates cell count and maximum sampling work without building occupancy:
 
 ```rust
-use caexfer::{Options, Result, preview};
+use caexfer::{InfillShape, Options, Result, preview};
 
 fn main() -> Result<()> {
     let plan = preview("examples/donut.stl", "donut.vti", &Options {
-        voxel_size: Some(0.25),
+        infill_shape: Some(InfillShape::Hex8),
+        infill_unit_size: Some(0.25),
         ..Options::default()
     })?;
     let grid = plan.voxel_estimate.expect("voxel plan");
@@ -131,9 +134,11 @@ file. Voxel previews stop before ray sampling and return source notices only;
 | `assume_basic_frame` | Accept basic-frame coordinates and displacements for conversion with a non-BDF companion |
 | `subcase`, `step` | Select an OP2/PCH result; `step` also selects an FRD or Exodus step |
 | `msh_version` | Select MSH 2.2 output; default is 4.1 |
-| `voxel_size` | Positive cubic cell size for mesh/STL to VTI/VOX or STL to a Hex8 volume mesh |
-| `match_grid` | Existing VTI grid to supply origin, spacing, and dimensions for mesh voxelization |
+| `infill_shape`, `infill_unit_size` | Paired meshing options: `InfillShape::{Tet4, Hex8, Wedge6, Pyramid5}` and a positive size in source units. Tet4 uses Gmsh; the others split occupied cubes on a size-spaced grid. Mesh-to-VTI/VOX requires `Hex8`. |
+| `match_grid` | Existing VTI grid to supply origin, spacing, and dimensions for Hex8 mesh voxelization |
 | `smooth_iterations` | Number of surface smoothing cycles (1–50) for VTI/VOX to STL; default 0 leaves voxel faces exact |
+| `surface` | Extract external triangles from a volume mesh before writing a mesh format |
+| `gmsh` | Optional path to the Gmsh executable; default is `gmsh` on `PATH` |
 | `max_bytes` | Bound the input and companion mesh reads; default is 256 MiB |
 | `zero_missing_rotations` | Accept float zero for missing OP2 R1/R2/R3 components |
 | `accept_synthetic_zero` | Accept a labeled all-zero OP2 result from result-free BDF or INP geometry |

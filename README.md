@@ -90,27 +90,47 @@ PCH is read-only.
 
 VTI and VOX carry binary voxel occupancy. Convert a closed triangle or quad
 surface (including STL), or the external boundary of a linear volume mesh,
-with `--voxel-size`. Voxel input becomes shared-corner Hex8 volume cells in
-mesh formats or exposed, triangulated faces in STL. STL can also become a
-Hex8 volume mesh with `--voxel-size`:
+with `--infill-shape hex8 --infill-unit-size N`. Voxel input becomes shared-corner Hex8 volume cells in
+mesh formats or exposed, triangulated faces in STL. A volume mesh can become a
+triangle surface mesh with `--surface`. Any closed triangle or quad surface
+mesh can become a voxelized Hex8 volume mesh with the same infill flags. For a
+surface-conforming Tet4 volume mesh, use `--infill-shape tet4` with Gmsh on
+`PATH` or pass `--gmsh /path/to/gmsh` (tested with Gmsh 4.15.2):
+
+`--infill-shape tet4|hex8|wedge6|pyramid5` and `--infill-unit-size N`
+provide one interface for volume meshing. Tet4 follows the input surface.
+Hex8, Wedge6, and Pyramid5 sample occupancy on a cubic grid of edge length
+`N`; each occupied cube yields one hex, two wedges, or six pyramids. All
+three grid shapes have the same stepped exterior at a given size. VTI and VOX
+output from a mesh accepts `hex8` infill; converting an existing VTI or VOX
+grid needs no infill flags.
 
 ```sh
-caexfer convert closed.stl solid.vti --voxel-size 0.5 --accept-omissions
+caexfer convert closed.stl solid.vti --infill-shape hex8 --infill-unit-size 0.5 --accept-omissions
 caexfer convert solid.vti solid.vox --accept-omissions
 caexfer convert solid.vox shell.stl --accept-omissions
 caexfer convert solid.vti smooth-shell.stl --smooth-iterations 10 --accept-omissions
-caexfer convert closed.stl volume.vtu --voxel-size 0.5 --accept-omissions
-caexfer convert closed.stl solid.vti --voxel-size 0.5 --preview
+caexfer convert closed.stl volume.vtu --infill-shape hex8 --infill-unit-size 0.5 --accept-omissions
+caexfer convert volume.vtu shell.vtu --surface --accept-omissions
+caexfer convert shell.vtu rebuilt-volume.vtu --infill-shape hex8 --infill-unit-size 0.5 --accept-omissions
+caexfer convert shell.vtu tets.vtu --infill-shape tet4 --infill-unit-size 0.5 --accept-omissions
+caexfer convert shell.vtu wedges.vtu --infill-shape wedge6 --infill-unit-size 0.5 --accept-omissions
+caexfer convert shell.vtu pyramids.vtu --infill-shape pyramid5 --infill-unit-size 0.5 --accept-omissions
 caexfer convert another.stl aligned.vti --match-grid solid.vti --accept-omissions
 ```
 
-`--preview` works for conversion to any writable format and never creates an
-output. It shows formats, source counts, and reported losses. Ordinary routes
-run a complete dry projection; mesh voxelization stops after calculating grid
-dimensions and the worst-case sampling work. Its destination losses and closed
-surface checks are completed when the conversion runs. `--match-grid` uses an
-existing VTI file's origin, spacing, and dimensions so separate meshes land on
-the same cells. Geometry outside that grid is rejected rather than clipped.
+`--match-grid` uses an existing VTI file's origin, spacing, and dimensions for
+Hex8 sampling so separate meshes land on the same cells. Geometry outside that
+grid is rejected rather than clipped. The read-only conversion preview shows
+source counts, reported losses, and voxel work before writing an output.
+
+Surface extraction keeps source point values and discards cell values, sets,
+and property IDs; extracted faces receive new element IDs. Volume meshing
+replaces the original point and element IDs and discards numeric fields, sets,
+and property IDs. Gmsh may remesh the boundary and the intermediate STL uses
+float32 coordinates. Both operations report these changes for acceptance.
+Tetrahedralization currently requires one closed manifold surface. The
+infill unit size supplies a target edge size to Gmsh. See [Gmsh's STL remeshing tutorial](https://gmsh.info/doc/texinfo/gmsh.html#t13).
 
 ### Donut voxel round trip
 
@@ -131,7 +151,7 @@ a +0.97% volume difference, but cannot recover detail smaller than a cell.
 Reproduce the finer round trip from a checkout of this branch:
 
 ```sh
-cargo run -- convert examples/donut.stl donut.vti --voxel-size 0.25 --accept-omissions
+cargo run -- convert examples/donut.stl donut.vti --infill-shape hex8 --infill-unit-size 0.25 --accept-omissions
 cargo run -- convert donut.vti donut-roundtrip.stl --accept-omissions
 cargo run -- convert donut.vti donut-smoothed.stl --smooth-iterations 10 --accept-omissions
 ```
@@ -143,3 +163,29 @@ The optional `--smooth-iterations N` (1–50) moves shared surface vertices with
 paired smoothing passes when exporting VTI or VOX to STL. It rounds the voxel
 steps but can soften small features and does not recover detail lost during
 voxelization. Without this option, STL output follows voxel boundaries exactly.
+
+### Surface ↔ volume round-trip check
+
+The same donut was converted to Tet4 volume meshes with Gmsh 4.15.2 and back
+to STL. The 0.5 voxel result is shown at the same camera and scale for
+comparison. Every output shell is watertight and retains the hole.
+
+![Oblique and top views of the original donut, two Tet4 round trips, and a Hex8 voxel round trip](assets/roundtrip-surface-volume.png)
+
+| Route | Volume cells | Output triangles | Enclosed volume change | Surface distance p95 |
+| --- | ---: | ---: | ---: | ---: |
+| Tet4, target size 0.5 | 1,407 | 922 | −4.57% | 0.039 |
+| Tet4, target size 0.25 | 10,605 | 3,488 | −1.12% | 0.011 |
+| Hex8 voxels, size 0.5 | 238 | 864 | +2.35% | 0.227 |
+
+Surface distance is the 95th percentile of bidirectional point-to-triangle
+distances from 5,000 seeded samples per surface in each direction; coordinates
+retain the input STL's unspecified units. Cell counts and IDs change with
+remeshing. As a separate volume → surface → volume check, a cube began with
+196 Tet4 cells and returned with 298; its boundary stayed on the same six
+planes and its enclosed volume remained 1.0.
+
+```sh
+caexfer convert examples/donut.stl donut-tets.vtu --infill-shape tet4 --infill-unit-size 0.25 --accept-omissions
+caexfer convert donut-tets.vtu donut-tets-roundtrip.stl --accept-omissions
+```

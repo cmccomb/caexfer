@@ -4,7 +4,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::conversion::{self, Format, Options, ReadResult, Stage};
+use crate::conversion::{self, Format, InfillShape, Options, ReadResult, Stage};
 use crate::core::{CellSet, Field, FieldLocation, NodeSet};
 
 static NEXT_SCRATCH: AtomicU64 = AtomicU64::new(0);
@@ -279,7 +279,8 @@ fn voxel_formats_bridge_surface_and_volume_meshes() {
     let stl_path = scratch.write("blocks.stl", stl);
     let mut vti = Vec::new();
     let options = Options {
-        voxel_size: Some(1.0),
+        infill_shape: Some(InfillShape::Hex8),
+        infill_unit_size: Some(1.0),
         ..Options::default()
     };
     let report = conversion::convert(
@@ -428,7 +429,8 @@ fn volume_and_stl_voxel_routes_report_geometry_and_field_losses() {
         assumed_zero: false,
     };
     let options = Options {
-        voxel_size: Some(0.5),
+        infill_shape: Some(InfillShape::Hex8),
+        infill_unit_size: Some(0.5),
         ..Options::default()
     };
     let mut vti = Vec::new();
@@ -500,6 +502,178 @@ fn volume_and_stl_voxel_routes_report_geometry_and_field_losses() {
         restored.dataset.mesh.cells[0].kind,
         crate::core::CellKind::Hex8
     );
+}
+
+/// General mesh formats can exchange an extracted shell and a voxelized volume.
+#[test]
+#[allow(clippy::too_many_lines)] // One round trip checks geometry and field behavior together.
+fn mesh_surface_and_volume_routes_preserve_only_mappable_fields() {
+    use crate::core::{Dataset, VoxelGrid};
+    let grid = VoxelGrid {
+        origin: [0.0; 3],
+        spacing: 1.0,
+        dims: [2, 2, 2],
+        occupied: vec![1; 8],
+    };
+    let mut mesh = grid.volume_mesh().unwrap();
+    mesh.cells[0].property_id = Some(7);
+    mesh.node_sets.push(NodeSet {
+        name: "edge".into(),
+        point_ids: vec![mesh.points[0].id],
+    });
+    let source = ReadResult {
+        format: Format::Vtu,
+        dataset: Dataset {
+            fields: vec![
+                Field {
+                    name: "temperature".into(),
+                    location: FieldLocation::Point,
+                    components: vec!["C1".into()],
+                    values: mesh
+                        .points
+                        .iter()
+                        .map(|point| f64::from(u32::try_from(point.id).unwrap()))
+                        .collect(),
+                    step: None,
+                    time: None,
+                },
+                Field {
+                    name: "stress".into(),
+                    location: FieldLocation::Cell,
+                    components: vec!["C1".into()],
+                    values: vec![3.0; mesh.cells.len()],
+                    step: None,
+                    time: None,
+                },
+            ],
+            mesh,
+        },
+        voxel_grid: None,
+        omissions: Vec::new(),
+        generated_point_ids: false,
+        assumed_zero: false,
+    };
+    let mut shell_bytes = Vec::new();
+    let shell_report = conversion::convert(
+        source,
+        Format::Vtu,
+        &Options {
+            surface: true,
+            ..Options::default()
+        },
+        &mut shell_bytes,
+    )
+    .unwrap();
+    assert_eq!(shell_report.fields, 2);
+    assert_eq!(shell_report.cells, 48);
+    assert_eq!(shell_report.points, 26);
+    assert!(
+        shell_report
+            .omissions
+            .iter()
+            .any(|item| item.detail.contains("cell field"))
+    );
+    assert!(
+        shell_report
+            .omissions
+            .iter()
+            .any(|item| item.detail.contains("property ID"))
+    );
+    let shell = crate::formats::vtu::read_projection(std::str::from_utf8(&shell_bytes).unwrap())
+        .unwrap()
+        .dataset;
+    assert_eq!(shell.fields.len(), 1);
+    assert_eq!(shell.fields[0].name, "temperature");
+    assert_eq!(shell.fields[0].values.len(), 26);
+    for (point, value) in shell.mesh.points.iter().zip(&shell.fields[0].values) {
+        assert!((f64::from(u32::try_from(point.id).unwrap()) - value).abs() < 1e-12);
+    }
+    assert!(
+        shell
+            .mesh
+            .cells
+            .iter()
+            .all(|cell| cell.kind == crate::core::CellKind::Triangle3)
+    );
+
+    let mut volume_bytes = Vec::new();
+    let volume_report = conversion::convert(
+        ReadResult {
+            format: Format::Vtu,
+            dataset: shell,
+            voxel_grid: None,
+            omissions: Vec::new(),
+            generated_point_ids: false,
+            assumed_zero: false,
+        },
+        Format::Vtu,
+        &Options {
+            infill_shape: Some(InfillShape::Hex8),
+            infill_unit_size: Some(1.0),
+            ..Options::default()
+        },
+        &mut volume_bytes,
+    )
+    .unwrap();
+    assert_eq!(volume_report.cells, 8);
+    assert_eq!(volume_report.fields, 1);
+    assert!(
+        volume_report
+            .omissions
+            .iter()
+            .any(|item| item.detail.contains("numeric field"))
+    );
+    let volume = crate::formats::vtu::read_projection(std::str::from_utf8(&volume_bytes).unwrap())
+        .unwrap()
+        .dataset;
+    assert!(volume.fields.is_empty());
+    assert!(
+        volume
+            .mesh
+            .cells
+            .iter()
+            .all(|cell| cell.kind == crate::core::CellKind::Hex8)
+    );
+}
+
+/// Each supported linear volume cell can project to a triangle-only shell.
+#[test]
+fn surface_extraction_handles_all_volume_cell_kinds() {
+    use crate::core::CellKind;
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mixed-linear.bdf");
+    let source = conversion::read_path(&path, &Options::default()).unwrap();
+    for (kind, expected_faces) in [
+        (CellKind::Tet4, 4),
+        (CellKind::Hex8, 12),
+        (CellKind::Wedge6, 8),
+        (CellKind::Pyramid5, 6),
+    ] {
+        let mut selected = source.clone();
+        selected.dataset.mesh.cells.retain(|cell| cell.kind == kind);
+        let mut bytes = Vec::new();
+        let report = conversion::convert(
+            selected,
+            Format::Vtu,
+            &Options {
+                surface: true,
+                ..Options::default()
+            },
+            &mut bytes,
+        )
+        .unwrap();
+        assert_eq!(report.cells, expected_faces, "{kind:?}");
+        assert_eq!(report.points, kind.node_count(), "{kind:?}");
+        let projected = crate::formats::vtu::read_projection(std::str::from_utf8(&bytes).unwrap())
+            .unwrap()
+            .dataset;
+        assert!(
+            projected
+                .mesh
+                .cells
+                .iter()
+                .all(|cell| cell.kind == CellKind::Triangle3)
+        );
+    }
 }
 
 /// Carry a named Gmsh boundary through SU2 marker output.

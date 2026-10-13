@@ -13,6 +13,14 @@ preview covers every writable route: ordinary conversions produce exact dry
 projection notices, while voxelization estimates grid dimensions and sampler
 work before occupancy allocation.
 
+Closed surfaces can also become surface-conforming Tet4 volumes through Gmsh,
+or voxelized Hex8, Wedge6, and Pyramid5 volumes. The CLI and library use one
+paired size interface, `--infill-shape` and `--infill-unit-size`, for these
+routes and for mesh-to-VTI/VOX sampling. `--surface` extracts the external
+triangle shell from linear volume meshes. Measured donut and cube round trips
+are documented in the README. The older voxel and tetrahedralization size
+flags are removed.
+
 The update also includes the paired OP2/companion-output recovery work and the
 Exodus classic-header allocation guard from the stabilization branch. An MSC
 Nastran plate fixture is checked against independent mesh and result readers.
