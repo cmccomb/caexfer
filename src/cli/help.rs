@@ -61,7 +61,11 @@ INPUT OPTIONS
 
 DESTINATION OPTIONS
   --msh-version 2.2|4.1      MSH output dialect (default: 4.1)
-  --voxel-size N             Cubic cell size for mesh/STL to VTI/VOX, or STL to volume mesh
+  --voxel-size N             Cubic cell size for mesh to VTI/VOX, or closed surface to Hex8 mesh
+  --surface                  Extract external triangles from a volume mesh
+  --tetrahedralize           Mesh a closed surface into conforming Tet4 cells (requires Gmsh)
+  --tet-size N               Target edge size for --tetrahedralize (Gmsh default if omitted)
+  --gmsh FILE                Gmsh executable for --tetrahedralize (default: gmsh on PATH)
   --smooth-iterations N      Smooth VTI/VOX to STL surface (1-50 cycles; default: off)
   --mesh-out FILE            Write a companion mesh alongside OP2 output
   --overwrite                Replace existing regular output files
@@ -89,6 +93,9 @@ EXAMPLES
   caexfer convert model.bdf model.vtu
   caexfer convert results.op2 results.vtu --mesh model.bdf
   caexfer convert model.msh model-2.2.msh --msh-version 2.2
+  caexfer convert volume.vtu shell.vtu --surface --accept-omissions
+  caexfer convert shell.vtu volume.vtu --voxel-size 0.5 --accept-omissions
+  caexfer convert shell.vtu tets.vtu --tetrahedralize --tet-size 0.5 --accept-omissions
 ";
 
 /// Return the help for the selected command; parsing ensures it is recognized.

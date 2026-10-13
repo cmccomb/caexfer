@@ -28,6 +28,10 @@ pub(super) struct Args {
     pub(super) max_bytes: Option<usize>,
     pub(super) msh_version: Option<MshVersion>,
     pub(super) voxel_size: Option<f64>,
+    pub(super) surface: bool,
+    pub(super) tetrahedralize: bool,
+    pub(super) tet_size: Option<f64>,
+    pub(super) gmsh: Option<PathBuf>,
     pub(super) smooth_iterations: Option<usize>,
 }
 
@@ -235,6 +239,24 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
                 Ok(size)
             })?;
             index += 1;
+        } else if options && arg == "--surface" {
+            set_flag(&mut args.surface, "--surface")?;
+        } else if options && arg == "--tetrahedralize" {
+            set_flag(&mut args.tetrahedralize, "--tetrahedralize")?;
+        } else if options && arg == "--tet-size" {
+            set_option(&mut args.tet_size, "--tet-size", || {
+                let size: f64 = value(1)?
+                    .parse()
+                    .map_err(|_| usage("--tet-size requires a positive finite number"))?;
+                if !size.is_finite() || size <= 0.0 {
+                    return Err(usage("--tet-size requires a positive finite number"));
+                }
+                Ok(size)
+            })?;
+            index += 1;
+        } else if options && arg == "--gmsh" {
+            set_option(&mut args.gmsh, "--gmsh", || Ok(PathBuf::from(value(1)?)))?;
+            index += 1;
         } else if options && arg == "--smooth-iterations" {
             set_option(&mut args.smooth_iterations, "--smooth-iterations", || {
                 let count: usize = value(1)?
@@ -336,6 +358,23 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
     if args.voxel_size.is_some() && args.command != "convert" {
         return Err(usage("--voxel-size applies only to convert"));
     }
+    if args.surface && args.command != "convert" {
+        return Err(usage("--surface applies only to convert"));
+    }
+    if args.surface && args.voxel_size.is_some() {
+        return Err(usage("--surface and --voxel-size cannot be combined"));
+    }
+    if args.tetrahedralize && (args.surface || args.voxel_size.is_some()) {
+        return Err(usage(
+            "--tetrahedralize cannot use --surface or --voxel-size",
+        ));
+    }
+    if args.tetrahedralize && args.command != "convert" {
+        return Err(usage("--tetrahedralize applies only to convert"));
+    }
+    if (args.tet_size.is_some() || args.gmsh.is_some()) && !args.tetrahedralize {
+        return Err(usage("--tet-size and --gmsh require --tetrahedralize"));
+    }
     if args.smooth_iterations.is_some()
         && (args.command != "convert"
             || Format::from_output_path(&args.paths[1]).ok() != Some(Format::Stl))
@@ -367,6 +406,43 @@ mod tests {
         assert!(args(&["validate", "x.bdf", "--json", "--json"]).is_err());
         assert!(args(&["validate", "x.bdf", "--json", "-j"]).is_err());
         assert!(args(&["validate", "x.bdf", "--strict", "-s"]).is_err());
+        assert!(args(&["convert", "x.vtu", "y.vtu", "--surface", "--surface"]).is_err());
+    }
+
+    /// Geometry projection switches are conversion-only and mutually exclusive.
+    #[test]
+    fn geometry_projection_options_are_scoped() {
+        assert!(
+            args(&["convert", "x.vtu", "y.vtu", "--surface"])
+                .unwrap()
+                .surface
+        );
+        assert!(args(&["validate", "x.vtu", "--surface"]).is_err());
+        assert!(
+            args(&[
+                "convert",
+                "x.vtu",
+                "y.vtu",
+                "--surface",
+                "--voxel-size",
+                "1"
+            ])
+            .is_err()
+        );
+        assert!(args(&["convert", "x.vtu", "y.vtu", "--tetrahedralize"]).is_ok());
+        assert!(args(&["validate", "x.vtu", "--tetrahedralize"]).is_err());
+        assert!(args(&["convert", "x.vtu", "y.vtu", "--tet-size", "1"]).is_err());
+        assert!(
+            args(&[
+                "convert",
+                "x.vtu",
+                "y.vtu",
+                "--tetrahedralize",
+                "--tet-size",
+                "0"
+            ])
+            .is_err()
+        );
     }
 
     /// Reject options that do not apply to the selected command or format.

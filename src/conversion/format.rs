@@ -203,8 +203,20 @@ pub struct Options {
     /// Requested MSH output dialect; `None` uses 4.1.
     pub msh_version: Option<msh::Version>,
 
-    /// Cubic voxel edge length for mesh/surface to voxel conversion.
+    /// Cubic cell edge length for surface-to-Hex8 or mesh-to-voxel conversion.
     pub voxel_size: Option<f64>,
+
+    /// Extract the external triangle surface of a volume mesh before writing.
+    pub surface: bool,
+
+    /// Generate a surface-conforming Tet4 volume from a closed surface.
+    pub tetrahedralize: bool,
+
+    /// Optional target edge size for tetrahedralization.
+    pub tet_size: Option<f64>,
+
+    /// Optional Gmsh executable path for tetrahedralization.
+    pub gmsh: Option<PathBuf>,
 
     /// Number of Taubin smoothing cycles for voxel-to-STL surfaces (0 disables).
     pub smooth_iterations: usize,
@@ -240,6 +252,10 @@ impl Default for Options {
             max_bytes: 256 * 1024 * 1024,
             msh_version: None,
             voxel_size: None,
+            surface: false,
+            tetrahedralize: false,
+            tet_size: None,
+            gmsh: None,
             smooth_iterations: 0,
             zero_missing_rotations: false,
             accept_omissions: false,

@@ -7,6 +7,7 @@
 mod format;
 mod read;
 mod report;
+mod tetra;
 mod write;
 
 #[cfg(test)]

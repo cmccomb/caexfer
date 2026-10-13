@@ -91,8 +91,11 @@ PCH is read-only.
 VTI and VOX carry binary voxel occupancy. Convert a closed triangle or quad
 surface (including STL), or the external boundary of a linear volume mesh,
 with `--voxel-size`. Voxel input becomes shared-corner Hex8 volume cells in
-mesh formats or exposed, triangulated faces in STL. STL can also become a
-Hex8 volume mesh with `--voxel-size`:
+mesh formats or exposed, triangulated faces in STL. A volume mesh can become a
+triangle surface mesh with `--surface`. Any closed triangle or quad surface
+mesh can become a voxelized Hex8 volume mesh with `--voxel-size`. For a
+surface-conforming Tet4 volume mesh, use `--tetrahedralize` with Gmsh on
+`PATH` or pass `--gmsh /path/to/gmsh` (tested with Gmsh 4.15.2):
 
 ```sh
 caexfer convert closed.stl solid.vti --voxel-size 0.5 --accept-omissions
@@ -100,7 +103,19 @@ caexfer convert solid.vti solid.vox --accept-omissions
 caexfer convert solid.vox shell.stl --accept-omissions
 caexfer convert solid.vti smooth-shell.stl --smooth-iterations 10 --accept-omissions
 caexfer convert closed.stl volume.vtu --voxel-size 0.5 --accept-omissions
+caexfer convert volume.vtu shell.vtu --surface --accept-omissions
+caexfer convert shell.vtu rebuilt-volume.vtu --voxel-size 0.5 --accept-omissions
+caexfer convert shell.vtu tets.vtu --tetrahedralize --tet-size 0.5 --accept-omissions
 ```
+
+Surface extraction keeps source point values and discards cell values, sets,
+and property IDs; extracted faces receive new element IDs. Volume meshing
+replaces the original point and element IDs and discards numeric fields, sets,
+and property IDs. Gmsh may remesh the boundary and the intermediate STL uses
+float32 coordinates. Both operations report these changes for acceptance.
+Tetrahedralization currently requires one closed manifold surface. The
+`--tet-size` option supplies a target edge size; omitting it uses Gmsh's
+default sizing. See [Gmsh's STL remeshing tutorial](https://gmsh.info/doc/texinfo/gmsh.html#t13).
 
 ### Donut voxel round trip
 
