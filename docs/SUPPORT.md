@@ -209,14 +209,13 @@ Unidata `ncgen`, and exported files have also been read by independent
 
 Read global `*NODE` and supported linear `*ELEMENT, TYPE=...` blocks. Node IDs
 and element IDs remain intact. `*PART`, `*ASSEMBLY`, `*INSTANCE`, `*SYSTEM`, and
-`*INCLUDE`, `*NGEN`, and `*ELGEN` require expansion/scoping and fail. `INPUT=`
-references on node or element blocks also fail because their external records
-are not loaded. Other keyword blocks are omitted from the mesh projection and
-listed by keyword. The
-writer emits only nodes and elements, without properties, materials, sets, loads,
-steps or results. It is not
-a runnable solver deck. `C3D5` is an Abaqus pyramid type; not every solver
-accepts every emitted element type.
+`*INCLUDE`, `*NGEN`, and `*ELGEN` require expansion/scoping and fail. Options on
+`*NODE` and options beyond `TYPE` on `*ELEMENT` also fail because this reader
+does not project their external records or named selections. Other keyword
+blocks are omitted from the mesh projection and listed by keyword. The writer
+emits only nodes and elements, without properties, materials, sets, loads,
+steps or results. It is not a runnable solver deck. `C3D5` is an Abaqus
+pyramid type; not every solver accepts every emitted element type.
 
 ### CalculiX FRD
 

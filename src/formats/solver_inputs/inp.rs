@@ -89,14 +89,6 @@ pub fn read(source: &str) -> Result<Inspection> {
             // perform, so fail before projecting misleading global nodes.
             let mut parts = stripped.split(',').map(str::trim);
             let keyword = parts.next().unwrap_or("").to_ascii_uppercase();
-            if matches!(keyword.as_str(), "NODE" | "ELEMENT")
-                && parts.clone().any(|part| {
-                    part.split_once('=')
-                        .is_some_and(|(key, _)| key.trim().eq_ignore_ascii_case("INPUT"))
-                })
-            {
-                return Err(err(format!("{keyword} INPUT needs external geometry")).at(line_no + 1));
-            }
             if matches!(
                 keyword.as_str(),
                 "INCLUDE"
@@ -115,18 +107,27 @@ pub fn read(source: &str) -> Result<Inspection> {
             }
             mode = match keyword.as_str() {
                 "NODE" => {
+                    if parts.next().is_some() {
+                        return Err(err("NODE options are unsupported").at(line_no + 1));
+                    }
                     seen_node = true;
                     Mode::Node
                 }
                 "ELEMENT" => {
                     seen_element = true;
                     let type_value = parts
-                        .find_map(|part| {
+                        .next()
+                        .and_then(|part| {
                             part.split_once('=')
                                 .filter(|(key, _)| key.trim().eq_ignore_ascii_case("TYPE"))
                                 .map(|(_, v)| v.trim().to_ascii_uppercase())
                         })
                         .ok_or_else(|| err("ELEMENT requires TYPE").at(line_no + 1))?;
+                    if parts.next().is_some() {
+                        return Err(
+                            err("ELEMENT options beyond TYPE are unsupported").at(line_no + 1)
+                        );
+                    }
                     Mode::Element(kind(&type_value).map_err(|e| e.at(line_no + 1))?)
                 }
                 _ => {
@@ -339,12 +340,22 @@ mod tests {
             ),
             (
                 "*NODE, INPUT=nodes.inp\n*ELEMENT, TYPE=B31\n",
-                "NODE INPUT needs external geometry",
+                "NODE options are unsupported",
                 Some(1),
             ),
             (
                 "*NODE\n1, 0, 0, 0\n*ELEMENT, TYPE=B31, INPUT=elements.inp\n",
-                "ELEMENT INPUT needs external geometry",
+                "ELEMENT options beyond TYPE are unsupported",
+                Some(3),
+            ),
+            (
+                "*NODE, NSET=LEFT\n*ELEMENT, TYPE=B31\n",
+                "NODE options are unsupported",
+                Some(1),
+            ),
+            (
+                "*NODE\n1, 0, 0, 0\n*ELEMENT, TYPE=B31, ELSET=BEAMS\n",
+                "ELEMENT options beyond TYPE are unsupported",
                 Some(3),
             ),
         ];

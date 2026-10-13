@@ -856,6 +856,47 @@ fn destination_reports_ambiguous_or_dropped_fields() {
     assert_ne!(encoded, []);
 }
 
+/// OP2 cannot silently choose among multiple displacement fields.
+#[test]
+fn op2_requires_exactly_one_displacement_field() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut source =
+        conversion::read_path(&root.join("examples/plate.bdf"), &Options::default()).unwrap();
+    assert_eq!(
+        conversion::convert(source.clone(), Format::Op2, &Options::default(), Vec::new())
+            .unwrap_err()
+            .code,
+        "E_OP2"
+    );
+    let displacement = Field {
+        name: "DISP".into(),
+        location: FieldLocation::Point,
+        components: ["T1", "T2", "T3", "R1", "R2", "R3"]
+            .map(str::to_owned)
+            .to_vec(),
+        values: vec![0.0; source.dataset.mesh.points.len() * 6],
+        step: None,
+        time: None,
+    };
+    source.dataset.fields.push(displacement.clone());
+    let mut output = Vec::new();
+    conversion::convert(
+        source.clone(),
+        Format::Op2,
+        &Options::default(),
+        &mut output,
+    )
+    .unwrap();
+    assert!(!output.is_empty());
+    source.dataset.fields.push(displacement);
+    assert_eq!(
+        conversion::convert(source, Format::Op2, &Options::default(), Vec::new())
+            .unwrap_err()
+            .code,
+        "E_OP2"
+    );
+}
+
 /// Assign and report stable IDs for VTU without identity arrays.
 #[test]
 fn external_vtu_without_identity_arrays_gets_explicit_stable_ids() {

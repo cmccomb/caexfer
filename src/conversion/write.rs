@@ -71,7 +71,7 @@ pub fn convert(
             // require the caller to select a step first.
             let mut seen = BTreeSet::new();
             for field in &dataset.fields {
-                if !seen.insert((field.location as u8, field.name.clone())) {
+                if !seen.insert((field.location as u8, field.name.as_str())) {
                     return Err(Error::new(
                         "E_VTU",
                         "multiple steps of one field; choose --step",
@@ -355,25 +355,20 @@ pub fn convert(
         }
         Format::Op2 => {
             // The adapter writes a single real nodal displacement table.
-            let matches: Vec<_> = dataset
-                .fields
-                .iter()
-                .filter(|field| {
-                    let name = field.name.to_ascii_uppercase();
-                    field.location == FieldLocation::Point
-                        && (name == "DISP"
-                            || name == "DISPLACEMENT"
-                            || name.starts_with("DISPLACEMENT_SUBCASE_"))
-                        && matches!(field.components.len(), 3 | 6)
-                })
-                .collect();
-            if matches.len() != 1 {
+            let mut matches = dataset.fields.iter().filter(|field| {
+                let name = field.name.to_ascii_uppercase();
+                field.location == FieldLocation::Point
+                    && (name == "DISP"
+                        || name == "DISPLACEMENT"
+                        || name.starts_with("DISPLACEMENT_SUBCASE_"))
+                    && matches!(field.components.len(), 3 | 6)
+            });
+            let (Some(field), None) = (matches.next(), matches.next()) else {
                 return Err(Error::new(
                     "E_OP2",
                     "OP2 output requires exactly one 3- or 6-component nodal DISP field; select one result step",
                 ));
-            }
-            let field = matches[0];
+            };
 
             // Recover a subcase encoded in the field name, defaulting to 1
             // for generic DISP names.
