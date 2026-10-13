@@ -69,6 +69,32 @@ requires its matching option: `assume_basic_frame`, `zero_missing_rotations`, or
 `accept_synthetic_zero`. `accept_all` accepts every notice. These options do not
 override parsing, coordinate-system, representability, or I/O errors.
 
+For voxel output, `ConversionReport.voxel_grid` contains the grid dimensions
+and occupied cell count. Mesh or STL input needs an explicit `voxel_size`;
+VTI/VOX input already defines a grid. For example:
+
+```rust
+use caexfer::{Options, Result, convert};
+
+fn main() -> Result<()> {
+    let report = convert("examples/donut.stl", "donut.vti", &Options {
+        voxel_size: Some(0.25),
+        accept_omissions: true,
+        ..Options::default()
+    })?;
+    assert_eq!(report.voxel_grid, Some(([26, 26, 7], 1859)));
+    convert("donut.vti", "donut-roundtrip.stl", &Options {
+        accept_omissions: true,
+        ..Options::default()
+    })?;
+    Ok(())
+}
+```
+
+Voxel grids carry occupancy, not interpolated solver values. Converting to VOX
+also omits physical origin and spacing; check `report.omissions` before using
+the output as geometry at a particular scale.
+
 ## Options for special routes
 
 | Option | Purpose |
@@ -79,6 +105,7 @@ override parsing, coordinate-system, representability, or I/O errors.
 | `subcase`, `step` | Select an OP2/PCH result; `step` also selects an FRD or Exodus step |
 | `msh_version` | Select MSH 2.2 output; default is 4.1 |
 | `voxel_size` | Positive cubic cell size for mesh/STL to VTI/VOX or STL to a Hex8 volume mesh |
+| `smooth_iterations` | Number of surface smoothing cycles (1–50) for VTI/VOX to STL; default 0 leaves voxel faces exact |
 | `max_bytes` | Bound the input and companion mesh reads; default is 256 MiB |
 | `zero_missing_rotations` | Accept float zero for missing OP2 R1/R2/R3 components |
 | `accept_synthetic_zero` | Accept a labeled all-zero OP2 result from result-free BDF or INP geometry |

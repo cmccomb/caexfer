@@ -41,6 +41,8 @@ caexfer convert surface.stl surface.vtu
 caexfer convert named-boundaries.msh named-boundaries.su2
 caexfer convert mesh.unv mesh.vtu
 caexfer convert results.exo results.vtu --step 0
+caexfer convert examples/donut.stl donut.vti --voxel-size 0.25 --accept-omissions
+caexfer convert donut.vti donut-roundtrip.stl --accept-omissions
 ```
 
 These commands use example input names. The [format limits](SUPPORT.md) describe
@@ -63,7 +65,7 @@ validation.
 | `validate INPUT` | Supported subset checks, projected counts, and source omissions |
 | `convert INPUT OUTPUT` | Project to a writable format; confirm each reported change before installation |
 
-Input extensions are `.bdf`, `.nas`, `.dat`, `.pch`, `.vtu`, `.vtk`, `.msh`, `.inp`,
+Input extensions are `.bdf`, `.nas`, `.dat`, `.pch`, `.vtu`, `.vti`, `.vox`, `.vtk`, `.msh`, `.inp`,
 `.frd`, `.op2`, `.stl`, `.su2`, `.unv`, `.exo`, `.e`, and `.exodus`
 (case-insensitive). `--from FORMAT` overrides the extension;
 this is not content autodetection. `.pch` selects the read-only PCH results
@@ -71,6 +73,14 @@ adapter. Output extension selects the writer.
 MSH input version is detected from `$MeshFormat`; `--msh-version 2.2` selects
 2.2 output, while 4.1 remains the default. The option also applies to an MSH
 companion written through `--mesh-out`.
+`--voxel-size N` supplies a positive cubic cell size when converting a closed
+mesh or STL surface to VTI/VOX occupancy, or STL to a Hex8 volume mesh. VTI
+and VOX input can be converted to an STL surface or an explicit volume mesh
+without this option. `--smooth-iterations N` (1–50) applies only to VTI/VOX
+to STL and changes the surface away from exact voxel boundaries. Both routes
+report geometry, field, ID, and scale losses that require acceptance. VTI
+retains origin and spacing; VOX does not. See [format limits](SUPPORT.md).
+
 `--mesh FILE` supplies geometry when reading OP2 or PCH. The companion must
 carry original node IDs that match the displacement table; generated one-based
 IDs are rejected. BDF input verifies `GRID CD=0`. Other formats do not carry
@@ -114,7 +124,8 @@ For `validate` and `convert`, `--json` returns the report on stdout as JSON with
 schema_version=1. Human-readable conversion omission reports go to stderr;
 JSON conversion reports place them in an `omissions` array with each item's
 `stage` (`source`, `destination`, or `assumption`), `acceptance_flag`, and detail. A paired export
-adds `mesh_output` with its path, format, and separate omissions. JSON error
+adds `mesh_output` with its path, format, and separate omissions. VTI/VOX output
+adds `voxel_grid` with dimensions and occupied cell count. JSON error
 output also goes to stdout. Schema version 1 is intentionally small; consumers
 should tolerate new keys.
 
