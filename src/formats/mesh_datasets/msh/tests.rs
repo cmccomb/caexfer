@@ -196,3 +196,53 @@ fn msh22_rejects_extra_tokens_and_unrepresentable_ids() {
     assert_eq!(write_22(&dataset, &mut output).unwrap_err().code, "E_MSH");
     assert_eq!(output, []);
 }
+
+/// Empty 2.2 geometry is a valid explicit mesh, not a missing section.
+#[test]
+fn empty_msh22_sections_are_preserved() {
+    let source =
+        "$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$Nodes\n0\n$EndNodes\n$Elements\n0\n$EndElements\n";
+    let dataset = read(source).unwrap();
+    assert!(dataset.mesh.points.is_empty());
+    assert!(dataset.mesh.cells.is_empty());
+}
+
+/// Malformed physical metadata must fail before attaching misleading groups.
+#[test]
+fn malformed_physical_names_and_entities_are_rejected() {
+    const HEADER: &str = "$MeshFormat\n4.1 0 8\n$EndMeshFormat\n";
+    for (section, message) in [
+        (
+            "$PhysicalNames\n9999\n$EndPhysicalNames\n",
+            "physical name count",
+        ),
+        (
+            "$PhysicalNames\n1\n4 7 \"bad\"\n$EndPhysicalNames\n",
+            "invalid physical name",
+        ),
+        (
+            "$PhysicalNames\n1\n1 7 bad\n$EndPhysicalNames\n",
+            "must be quoted",
+        ),
+        (
+            "$PhysicalNames\n2\n1 7 \"edge\"\n1 7 \"duplicate\"\n$EndPhysicalNames\n",
+            "duplicate physical group",
+        ),
+        (
+            "$PhysicalNames\n0\n1 7 \"extra\"\n$EndPhysicalNames\n",
+            "extra physical name",
+        ),
+        ("$Entities\n1 0 0\n$EndEntities\n", "four entity counts"),
+        (
+            "$Entities\n1 0 0 0\n1 0\n$EndEntities\n",
+            "short entity record",
+        ),
+        (
+            "$Entities\n1 0 0 0\n1 0 0 0 2 7\n$EndEntities\n",
+            "entity physical count exceeds",
+        ),
+    ] {
+        let error = read_projection(&format!("{HEADER}{section}")).unwrap_err();
+        assert!(error.message.contains(message), "{section:?}: {error}");
+    }
+}

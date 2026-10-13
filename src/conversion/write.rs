@@ -17,8 +17,8 @@ fn omit_property_ids(mesh: &mut Mesh) -> usize {
 /// Write a previously read source in another supported format.
 ///
 /// OP2 output requires exactly one nodal displacement field. A caller may
-/// supply a synthetic field, but must set
-/// `source.assumed_zero` to mark that provenance in the OP2 title.
+/// supply a synthetic field with a `SyntheticZero` assumption to mark that
+/// provenance in the OP2 title.
 ///
 /// # Errors
 ///
@@ -35,6 +35,10 @@ pub fn convert(
     // Count fields before destination-specific filtering; the report describes
     // the source dataset as well as any losses during output.
     let source_fields = source.dataset.fields.len();
+    let assumed_zero = source
+        .omissions
+        .iter()
+        .any(|item| item.assumption == Some(AssumptionKind::SyntheticZero));
     let dataset = &mut source.dataset;
     let omissions = &mut source.omissions;
     if target != Format::Su2 {
@@ -413,7 +417,7 @@ pub fn convert(
                 field,
                 subcase,
                 options.zero_missing_rotations,
-                source.assumed_zero,
+                assumed_zero,
             )?;
             writer.write_all(&bytes)?;
         }

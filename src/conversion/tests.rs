@@ -461,7 +461,6 @@ fn classic_exodus_and_stl_report_destination_projection() {
         dataset: crate::formats::stl::read_projection(stl).unwrap().dataset,
         omissions: Vec::new(),
         generated_point_ids: true,
-        assumed_zero: false,
     };
     read.dataset.mesh.cells[0].property_id = Some(7);
     read.dataset.fields.push(Field {
@@ -601,7 +600,6 @@ fn geometry_only_writers_reject_fields_while_conversion_reports_them() {
                 dataset,
                 omissions: Vec::new(),
                 generated_point_ids: matches!(format, Format::Stl | Format::Su2),
-                assumed_zero: false,
             },
             format,
             &Options::default(),
@@ -648,7 +646,6 @@ fn writers_reject_unmapped_properties_while_conversion_reports_them() {
                 dataset,
                 omissions: Vec::new(),
                 generated_point_ids: matches!(format, Format::Stl | Format::Su2),
-                assumed_zero: false,
             },
             format,
             &Options::default(),

@@ -15,31 +15,33 @@ use super::stage::{Staged, ensure_new};
 /// # Errors
 ///
 /// Returns an error if staging, writing, syncing, or installing the new file fails.
-pub(crate) fn create_new(
+pub(crate) fn create_new<T>(
     path: &Path,
-    write: impl FnOnce(&mut BufWriter<File>) -> Result<()>,
-) -> Result<()> {
+    write: impl FnOnce(&mut BufWriter<File>) -> Result<T>,
+) -> Result<T> {
     // Staged::new retains cleanup ownership until the install call returns.
-    Staged::new(path, write)?.install()
+    let (staged, value) = Staged::new(path, write)?;
+    staged.install()?;
+    Ok(value)
 }
 
 /// Stage two outputs before installing either. Both paths must be new. If the
 /// second install fails after the first succeeds, retain the staged second
 /// file and name it in the error so the caller can recover the pair.
-pub(crate) fn create_pair(
+pub(crate) fn create_pair<T, U>(
     first_path: &Path,
-    first_write: impl FnOnce(&mut BufWriter<File>) -> Result<()>,
+    first_write: impl FnOnce(&mut BufWriter<File>) -> Result<T>,
     second_path: &Path,
-    second_write: impl FnOnce(&mut BufWriter<File>) -> Result<()>,
-) -> Result<()> {
+    second_write: impl FnOnce(&mut BufWriter<File>) -> Result<U>,
+) -> Result<(T, U)> {
     // Both writes finish before either final path becomes visible.
     if first_path == second_path {
         return Err(Error::new("E_USAGE", "paired outputs need distinct paths"));
     }
     ensure_new(first_path)?;
     ensure_new(second_path)?;
-    let first = Staged::new(first_path, first_write)?;
-    let mut second = Staged::new(second_path, second_write)?;
+    let (first, first_value) = Staged::new(first_path, first_write)?;
+    let (mut second, second_value) = Staged::new(second_path, second_write)?;
 
     // The two installations cannot be atomic together; report partial
     // installation accurately if the second hard link fails.
@@ -58,5 +60,6 @@ pub(crate) fn create_pair(
                 error.message
             ),
         )
-    })
+    })?;
+    Ok((first_value, second_value))
 }

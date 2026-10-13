@@ -539,4 +539,68 @@ mod tests {
         bytes[data - 4..data].copy_from_slice(&27_i32.to_le_bytes());
         assert!(decode(&bytes, None, None).is_err());
     }
+
+    /// Reject a title that claims fabricated zeros when the table has results.
+    #[test]
+    fn synthetic_title_cannot_mask_nonzero_results() {
+        let bytes = encode(&[(10, [1.0, 0.0, 0.0, 0.0, 0.0, 0.0])], 1, None, true).unwrap();
+        let error = decode(&bytes, None, None).unwrap_err();
+        assert_eq!(error.code, "E_OP2");
+        assert!(
+            error
+                .message
+                .contains("conflicts with nonzero displacement")
+        );
+    }
+
+    /// Metadata and row identity are checked before exposing a projection.
+    #[test]
+    fn malformed_table_metadata_and_grid_rows_are_rejected() {
+        let rows = [(10, [0.0_f32; 6])];
+        let bytes = encode(&rows, 1, Some(0.5), false).unwrap();
+        let table3 = bytes
+            .windows(4)
+            .position(|word| word == 584_i32.to_le_bytes())
+            .unwrap()
+            + 4;
+        let row = bytes
+            .windows(4)
+            .rposition(|word| word == 102_i32.to_le_bytes())
+            .unwrap();
+
+        let mut bad = bytes.clone();
+        bad[table3 + 4..table3 + 8].copy_from_slice(&2_i32.to_le_bytes());
+        assert!(
+            decode(&bad, None, None)
+                .unwrap_err()
+                .message
+                .contains("only real SORT1")
+        );
+
+        let mut bad = bytes.clone();
+        bad[table3 + 16..table3 + 20].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert!(
+            decode(&bad, None, None)
+                .unwrap_err()
+                .message
+                .contains("nonfinite OP2 displacement time")
+        );
+
+        let mut bad = bytes.clone();
+        bad[row + 4..row + 8].copy_from_slice(&2_i32.to_le_bytes());
+        assert!(
+            decode(&bad, None, None)
+                .unwrap_err()
+                .message
+                .contains("invalid OP2 GRID displacement row")
+        );
+
+        let duplicate = encode(&[rows[0], rows[0]], 1, None, false).unwrap();
+        assert!(
+            decode(&duplicate, None, None)
+                .unwrap_err()
+                .message
+                .contains("duplicate OP2 displacement GRID")
+        );
+    }
 }

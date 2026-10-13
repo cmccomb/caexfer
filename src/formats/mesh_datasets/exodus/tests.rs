@@ -266,3 +266,47 @@ fn writer_requires_explicit_scalar_time_metadata() {
             .contains("times disagree")
     );
 }
+
+/// A series cannot repeat a variable at one step or begin after step one.
+#[test]
+fn writer_rejects_duplicate_and_noncontiguous_result_series() {
+    let original = read_projection(SOURCE, None).unwrap().dataset;
+    let mut duplicate = original.clone();
+    duplicate.fields.push(original.fields[0].clone());
+    assert!(
+        write_data(&duplicate, Vec::new())
+            .unwrap_err()
+            .message
+            .contains("duplicate Exodus variable")
+    );
+
+    let mut later_step_only = original;
+    later_step_only.fields.retain(|field| field.step == Some(2));
+    assert!(
+        write_data(&later_step_only, Vec::new())
+            .unwrap_err()
+            .message
+            .contains("steps must start at 1")
+    );
+}
+
+/// Exodus classic requires representable element IDs and nonempty geometry.
+#[test]
+fn writer_rejects_missing_geometry_and_oversize_element_ids() {
+    let empty = Dataset::default();
+    assert!(
+        write_data(&empty, Vec::new())
+            .unwrap_err()
+            .message
+            .contains("requires nodes and elements")
+    );
+    let mut mesh = read_projection(SOURCE, None).unwrap().dataset;
+    mesh.fields.clear();
+    mesh.mesh.cells[0].id = u64::try_from(i32::MAX).unwrap() + 1;
+    assert!(
+        write_data(&mesh, Vec::new())
+            .unwrap_err()
+            .message
+            .contains("element ID exceeds Int32")
+    );
+}

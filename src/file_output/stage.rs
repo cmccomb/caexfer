@@ -51,10 +51,10 @@ pub(super) struct Staged {
 impl Staged {
     /// Write, flush, and sync to an exclusive temporary file beside `path`.
     /// Nothing is visible at the destination until `install` succeeds.
-    pub(super) fn new(
+    pub(super) fn new<T>(
         path: &Path,
-        write: impl FnOnce(&mut BufWriter<File>) -> Result<()>,
-    ) -> Result<Self> {
+        write: impl FnOnce(&mut BufWriter<File>) -> Result<T>,
+    ) -> Result<(Self, T)> {
         // Stage beside the destination so a later hard link stays on the
         // same filesystem and can refuse replacement atomically.
         let name = path
@@ -106,14 +106,17 @@ impl Staged {
 
         // Flush buffered bytes and sync the file before making a destination
         // name visible; Temporary cleans up if any step fails.
-        write(&mut writer)?;
+        let value = write(&mut writer)?;
         writer.flush()?;
         writer.get_ref().sync_all()?;
         drop(writer);
-        Ok(Self {
-            path: path.to_path_buf(),
-            temporary,
-        })
+        Ok((
+            Self {
+                path: path.to_path_buf(),
+                temporary,
+            },
+            value,
+        ))
     }
 
     /// Link a complete staged file into a still-new destination name.

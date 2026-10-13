@@ -342,4 +342,67 @@ mod tests {
         mesh.node_sets[0].point_ids.push(999);
         assert_eq!(mesh.validate().unwrap_err().code, "E_SET");
     }
+
+    /// Reject malformed cells and duplicate selection names at the shared boundary.
+    #[test]
+    fn cell_and_set_invariants_reject_ambiguous_identity() {
+        let mut mesh = Mesh {
+            points: vec![
+                Point {
+                    id: 10,
+                    position: [0.0; 3],
+                },
+                Point {
+                    id: 20,
+                    position: [1.0, 0.0, 0.0],
+                },
+            ],
+            cells: vec![Cell {
+                id: 30,
+                kind: CellKind::Line2,
+                connectivity: vec![0, 1],
+                property_id: None,
+            }],
+            ..Mesh::default()
+        };
+        mesh.validate().unwrap();
+
+        mesh.cells.push(mesh.cells[0].clone());
+        assert_eq!(mesh.validate().unwrap_err().code, "E_CELL_ID");
+        mesh.cells.pop();
+        mesh.cells[0].connectivity.pop();
+        assert_eq!(mesh.validate().unwrap_err().code, "E_CONNECTIVITY");
+        mesh.cells[0].connectivity = vec![0, 0];
+        assert_eq!(
+            mesh.validate().unwrap_err().code,
+            "E_DEGENERATE_CONNECTIVITY"
+        );
+        mesh.cells[0].connectivity = vec![0, 1];
+
+        mesh.node_sets = vec![
+            NodeSet {
+                name: "fixed".into(),
+                point_ids: vec![10],
+            },
+            NodeSet {
+                name: "fixed".into(),
+                point_ids: vec![20],
+            },
+        ];
+        assert_eq!(mesh.validate().unwrap_err().code, "E_SET");
+        mesh.node_sets.pop();
+        mesh.cell_sets = vec![
+            CellSet {
+                name: "edge".into(),
+                dimension: 1,
+                cell_ids: vec![30],
+            },
+            CellSet {
+                name: "edge".into(),
+                dimension: 1,
+                cell_ids: vec![30],
+            },
+        ];
+        assert_eq!(mesh.validate().unwrap_err().code, "E_SET");
+    }
 }

@@ -67,7 +67,7 @@ fn failed_write_leaves_no_output_or_temp() {
     assert!(
         create_new(&dest, |writer| {
             writer.write_all(b"partial")?;
-            Err(Error::new("E_TEST", "deliberate failure"))
+            Err::<(), _>(Error::new("E_TEST", "deliberate failure"))
         })
         .is_err()
     );
@@ -105,7 +105,7 @@ fn pair_stages_both_before_committing_either() {
                 Ok(())
             },
             &second,
-            |_writer| Err(Error::new("E_TEST", "mesh write failed")),
+            |_writer| Err::<(), _>(Error::new("E_TEST", "mesh write failed")),
         )
         .is_err()
     );
