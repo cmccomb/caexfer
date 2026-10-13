@@ -21,7 +21,7 @@ Requires Rust 1.86 or newer. Install the published CLI from crates.io:
 
 ```sh
 cargo install caexfer
-caexfer --formats
+caexfer formats
 ```
 
 Add the published library to your Rust project:
@@ -79,7 +79,7 @@ For scripts, pass the specific `--accept-...` flags named in that list, or use
 
 [![Flowchart of solver inputs, geometry formats, mesh and voxel datasets, and companion results connecting through caexfer](assets/conversion-flow.svg)](assets/conversion-flow.svg)
 
-`caexfer --formats` lists the current readers and writers. Mesh sources can be
+`caexfer formats` lists the current readers and writers. Mesh sources can be
 converted when the destination supports their cell types and data. VTU, legacy
 VTK, MSH, and classic Exodus carry numeric fields within their documented
 subsets; FRD carries nodal fields. BDF, INP, STL, SU2, and UNV provide narrower

@@ -123,7 +123,7 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             }),
             Some(topic) if raw.len() == 2 => {
                 let topic = text(topic)?;
-                if !matches!(topic, "inspect" | "convert") {
+                if !matches!(topic, "formats" | "inspect" | "convert") {
                     return Err(usage(format!("unknown help topic {topic:?}; use --help")));
                 }
                 Ok(Args {
@@ -141,12 +141,15 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             ..Args::default()
         });
     }
-    if matches!(command.as_str(), "-f" | "--formats") {
-        if raw.len() != 1 {
-            return Err(usage("--formats takes no options or paths"));
-        }
+    if command == "formats" {
+        let help_requested = match raw.get(1) {
+            None => false,
+            Some(option) if raw.len() == 2 && matches!(text(option)?, "-h" | "--help") => true,
+            Some(_) => return Err(usage("formats takes no paths or options except --help")),
+        };
         return Ok(Args {
-            command: "formats".into(),
+            command,
+            help_requested,
             ..Args::default()
         });
     }
@@ -713,15 +716,19 @@ mod tests {
         assert!(args(&["convert", "only.bdf", "--accept-all"]).is_err());
     }
 
-    /// The global formats switch takes no additional options or paths.
+    /// The formats command takes only an optional help switch.
     #[test]
-    fn format_report_is_a_global_switch() {
-        assert_eq!(args(&["-f"]).unwrap().command, "formats");
-        assert!(args(&["--formats", "--json"]).is_err());
-        assert!(args(&["--json", "-f"]).is_err());
-        assert!(args(&["-f", "--formats"]).is_err());
-        assert!(args(&["--formats", "x.bdf"]).is_err());
-        assert!(args(&["formats"]).is_err());
+    fn formats_command_has_no_paths_or_data_options() {
+        let report = args(&["formats"]).unwrap();
+        assert_eq!(report.command, "formats");
+        assert!(!report.help_requested);
+        assert!(args(&["formats", "--help"]).unwrap().help_requested);
+        assert!(args(&["formats", "-h"]).unwrap().help_requested);
+        assert!(args(&["help", "formats"]).unwrap().help_requested);
+        assert!(args(&["formats", "--json"]).is_err());
+        assert!(args(&["formats", "x.bdf"]).is_err());
+        assert!(args(&["-f"]).is_err());
+        assert!(args(&["--formats"]).is_err());
     }
 
     /// Constrain synthetic zero displacement to its explicit OP2 output path.

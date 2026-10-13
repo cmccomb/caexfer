@@ -49,12 +49,12 @@ fn help_and_version_work() {
     let overview = String::from_utf8(overview.stdout).unwrap();
     assert!(overview.contains("caexfer COMMAND [OPTIONS]"));
     assert!(overview.contains("caexfer COMMAND --help"));
-    assert!(overview.contains("-f, --formats"));
+    assert!(overview.contains("formats  List supported formats"));
+    assert!(!overview.contains("-f, --formats"));
     assert!(overview.contains("  inspect "));
     assert!(!overview.contains("  plan "));
     assert!(!overview.contains("  preview "));
     assert!(!overview.contains("  validate "));
-    assert!(!overview.contains("  formats   "));
     assert!(!overview.contains("  info      "));
     assert_eq!(s.run(&["info", "mesh.bdf"]).status.code(), Some(2));
     assert_eq!(s.run(&["validate", "mesh.bdf"]).status.code(), Some(2));
@@ -79,7 +79,7 @@ fn help_and_version_work() {
     assert!(convert.contains("-j, --json"));
     assert!(!convert.contains("Treat following arguments as paths"));
     assert!(convert.contains("--mesh-out FILE"));
-    assert!(convert.contains("caexfer --formats"));
+    assert!(convert.contains("caexfer formats"));
     assert_eq!(
         convert,
         String::from_utf8(s.run(&["help", "convert"]).stdout).unwrap()
@@ -641,20 +641,27 @@ fn op2_requires_matching_mesh() {
     );
 }
 
-/// Show the PCH read-only capability in the global format listing.
+/// Show the PCH read-only capability through the formats command.
 #[test]
 fn formats_advertises_read_only_pch() {
     let s = Scratch::new();
-    let human = s.run(&["-f"]);
+    let human = s.run(&["formats"]);
     assert!(human.status.success());
     let listing = String::from_utf8(human.stdout).unwrap();
     assert!(listing.contains("vti  ASCII XML ImageData occupancy, read/write"));
     assert!(listing.contains("vox  MagicaVoxel 150 single-model occupancy, read/write"));
     assert!(listing.contains("pch  ASCII real SORT1 displacement, read-only"));
-    let unsupported_json = s.run(&["--formats", "--json"]);
+    let help = s.run(&["formats", "--help"]);
+    assert!(help.status.success());
+    assert!(String::from_utf8_lossy(&help.stdout).contains("USAGE\n  caexfer formats"));
+    assert_eq!(help.stdout, s.run(&["help", "formats"]).stdout);
+
+    let unsupported_json = s.run(&["formats", "--json"]);
     assert_eq!(unsupported_json.status.code(), Some(2));
     assert_eq!(unsupported_json.stdout, b"");
     assert!(String::from_utf8_lossy(&unsupported_json.stderr).contains("E_USAGE"));
+    assert_eq!(s.run(&["-f"]).status.code(), Some(2));
+    assert_eq!(s.run(&["--formats"]).status.code(), Some(2));
 }
 
 /// Report projected counts and omissions in human validation output.
@@ -959,8 +966,8 @@ fn malformed_cli_options_fail_without_writing() {
         vec!["inspect", "mesh.bdf", "--from"],
         vec!["inspect", "mesh.bdf", "--accept-basic-frame"],
         vec!["inspect", "mesh.bdf", "--mesh", "mesh.bdf"],
-        vec!["--formats", "--mesh", "mesh.bdf"],
-        vec!["--formats", "--json"],
+        vec!["formats", "--mesh", "mesh.bdf"],
+        vec!["formats", "--json"],
         vec![
             "convert",
             "mesh.bdf",

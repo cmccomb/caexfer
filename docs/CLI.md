@@ -7,7 +7,7 @@ Install the published CLI with `cargo install caexfer`
 run without Python.
 
 ```sh
-caexfer --formats
+caexfer formats
 caexfer inspect model.bdf --json
 caexfer inspect results.op2 --mesh model.vtu -j
 caexfer convert model.bdf model.vtu
@@ -50,16 +50,16 @@ caexfer convert other.stl aligned.vti --match-grid donut.vti --accept-omissions
 These commands use example input names. The [format limits](SUPPORT.md) describe
 which cells, sets, fields, and time data each route can retain.
 
-`caexfer --help` lists the commands and global options. `caexfer -f` and
-`caexfer --formats` list format capabilities. Run `caexfer inspect` or
+`caexfer --help` lists the commands and global options. `caexfer formats`
+lists format capabilities. Run `caexfer inspect` or
 `caexfer convert` without paths to see each command's
 options and examples. `--help` works after any command too. Paths can occur
 before or after options; use `--` for paths beginning with a hyphen. Filenames
 use OS-native strings internally; JSON/human display of non-UTF-8 paths is
 lossy, not an exact path serialization.
 
-`-j` abbreviates `--json` for all commands; `-s` abbreviates `--strict` for
-`inspect`.
+`-j` abbreviates `--json` for `inspect` and `convert`; `-s` abbreviates
+`--strict` for `inspect`.
 
 `inspect INPUT` reads the supported source subset and reports counts and source
 notices. It cannot establish whether a chosen destination can represent that
@@ -73,7 +73,7 @@ flags because it never installs an output.
 
 | Command or option | Result |
 | --- | --- |
-| `-f`, `--formats` | Actual read/write capabilities, not a roadmap |
+| `formats` | Actual read/write capabilities, not a roadmap |
 | `inspect INPUT` | Source subset checks, projected counts, and source notices |
 | `convert INPUT OUTPUT --preview` | Destination-specific dry projection or grid work estimate; no output file |
 | `convert INPUT OUTPUT` | Project to a writable format; confirm each reported change before installation |

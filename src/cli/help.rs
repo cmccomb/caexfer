@@ -6,10 +6,11 @@ pub(super) const OVERVIEW: &str = "caexfer: transfer meshes, voxel occupancy, an
 USAGE
   caexfer --help
   caexfer --version
-  caexfer --formats
+  caexfer formats
   caexfer COMMAND [OPTIONS]
 
 COMMANDS
+  formats  List supported formats and read/write capabilities
   inspect  Check source data and report counts and notices
   convert  Write a supported projection, or preview it without writing
 
@@ -18,7 +19,13 @@ Run 'caexfer COMMAND --help' for options and examples.
 GLOBAL OPTIONS
   -h, --help     Show this help
   -V, --version  Show the version
-  -f, --formats  List supported formats and read/write capabilities
+";
+
+/// Explain the zero-argument format capability listing.
+const FORMATS: &str = "caexfer formats: list supported formats and read/write capabilities
+
+USAGE
+  caexfer formats
 ";
 
 /// Explain validation and when source omissions make it fail.
@@ -28,7 +35,7 @@ USAGE
   caexfer inspect INPUT [OPTIONS]
 
 INPUT OPTIONS
-  --from FORMAT         Override the input extension; see 'caexfer --formats'
+  --from FORMAT         Override the input extension; see 'caexfer formats'
   --max-bytes N         Limit input size in bytes (default: 268435456 / 256 MiB)
   --mesh FILE           Companion mesh for OP2/PCH results
   --subcase N           Select an OP2/PCH displacement subcase
@@ -57,7 +64,7 @@ USAGE
   caexfer convert INPUT OUTPUT [OPTIONS]
 
 INPUT OPTIONS
-  --from FORMAT              Override the input extension; see 'caexfer --formats'
+  --from FORMAT              Override the input extension; see 'caexfer formats'
   --max-bytes N              Limit input size in bytes (default: 268435456 / 256 MiB)
   --mesh FILE                Companion mesh for OP2/PCH results
   --subcase N                Select an OP2/PCH displacement subcase
@@ -116,6 +123,7 @@ EXAMPLES
 /// Return the help for the selected command; parsing ensures it is recognized.
 pub(super) fn for_command(command: &str) -> &'static str {
     match command {
+        "formats" => FORMATS,
         "inspect" => INSPECT,
         "convert" => CONVERT,
         _ => OVERVIEW,

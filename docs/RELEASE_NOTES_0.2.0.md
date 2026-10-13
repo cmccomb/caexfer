@@ -23,6 +23,9 @@ triangle shell from linear volume meshes. Measured donut and cube round trips
 are documented in the README. The older voxel and tetrahedralization size
 flags are removed.
 
+The CLI now uses `caexfer formats` for the capability listing. The former
+`-f` and `--formats` switches are removed.
+
 The update also includes the paired OP2/companion-output recovery work and the
 Exodus classic-header allocation guard from the stabilization branch. An MSC
 Nastran plate fixture is checked against independent mesh and result readers.
