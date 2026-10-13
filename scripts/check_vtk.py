@@ -78,7 +78,7 @@ def main() -> None:
         # against caexfer's reader through its volume-mesh projection.
         occupancy = folder / 'occupancy.vti'
         convert(ROOT / 'tests/fixtures/mixed-linear.bdf', occupancy,
-                '--voxel-size', '0.5')
+                '--infill-shape', 'hex8', '--infill-unit-size', '0.5')
         image_reader = vtk.vtkXMLImageDataReader()
         image_reader.SetFileName(str(occupancy))
         image_reader.Update()
