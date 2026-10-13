@@ -50,10 +50,18 @@ fn help_and_version_work() {
     assert!(overview.contains("caexfer COMMAND [OPTIONS]"));
     assert!(overview.contains("caexfer COMMAND --help"));
     assert!(overview.contains("-f, --formats"));
-    assert!(overview.contains("  preview "));
+    assert!(overview.contains("  inspect "));
+    assert!(overview.contains("  plan "));
+    assert!(!overview.contains("  preview "));
+    assert!(!overview.contains("  validate "));
     assert!(!overview.contains("  formats   "));
     assert!(!overview.contains("  info      "));
     assert_eq!(s.run(&["info", "mesh.bdf"]).status.code(), Some(2));
+    assert_eq!(s.run(&["validate", "mesh.bdf"]).status.code(), Some(2));
+    assert_eq!(
+        s.run(&["preview", "mesh.bdf", "mesh.vtu"]).status.code(),
+        Some(2)
+    );
 
     let convert = s.run(&["convert", "--help"]);
     assert!(convert.status.success());
@@ -76,28 +84,29 @@ fn help_and_version_work() {
     assert_eq!(convert, String::from_utf8(bare_convert.stdout).unwrap());
     assert_eq!(bare_convert.stderr, b"");
 
-    let validate = s.run(&["validate", "--help"]);
+    let validate = s.run(&["inspect", "--help"]);
     assert!(validate.status.success());
     let validate = String::from_utf8(validate.stdout).unwrap();
     assert!(validate.contains("-s, --strict"));
     assert!(validate.contains("-j, --json"));
     assert!(!validate.contains("--accept-basic-frame"));
     assert!(!validate.contains("--mesh-out FILE"));
-    let bare_validate = s.run(&["validate"]);
+    let bare_validate = s.run(&["inspect"]);
     assert!(bare_validate.status.success());
     assert_eq!(validate, String::from_utf8(bare_validate.stdout).unwrap());
     assert_eq!(bare_validate.stderr, b"");
     assert_eq!(s.run(&["convert", "mesh.bdf"]).status.code(), Some(2));
-    let preview = s.run(&["preview", "--help"]);
+    let preview = s.run(&["plan", "--help"]);
     assert!(preview.status.success());
     let preview = String::from_utf8(preview.stdout).unwrap();
-    assert!(preview.contains("preview INPUT OUTPUT [OPTIONS]"));
+    assert!(preview.contains("plan INPUT OUTPUT [OPTIONS]"));
+    assert!(preview.contains("complete=false"));
     assert!(preview.contains("--match-grid FILE"));
     assert!(!preview.contains("--overwrite"));
     assert!(!preview.contains("--accept-omissions"));
     assert_eq!(
         preview,
-        String::from_utf8(s.run(&["help", "preview"]).stdout).unwrap()
+        String::from_utf8(s.run(&["help", "plan"]).stdout).unwrap()
     );
     assert_eq!(
         s.run(&["convert", "mesh.bdf", "mesh.vtu", "--preview"])
@@ -106,18 +115,18 @@ fn help_and_version_work() {
         Some(2)
     );
     assert_eq!(
-        s.run(&["preview", "mesh.bdf", "mesh.vtu", "--overwrite"])
+        s.run(&["plan", "mesh.bdf", "mesh.vtu", "--overwrite"])
             .status
             .code(),
         Some(2)
     );
     assert_eq!(
-        s.run(&["preview", "mesh.bdf", "mesh.vtu", "--accept-all"])
+        s.run(&["plan", "mesh.bdf", "mesh.vtu", "--accept-all"])
             .status
             .code(),
         Some(2)
     );
-    assert_eq!(s.run(&["validate", "--strict"]).status.code(), Some(2));
+    assert_eq!(s.run(&["inspect", "--strict"]).status.code(), Some(2));
 
     assert_eq!(
         String::from_utf8(s.run(&["--version"]).stdout)
@@ -130,7 +139,7 @@ fn help_and_version_work() {
 /// Expose schema version and projected BDF counts in JSON validation.
 #[test]
 fn validation_json_has_version_and_counts() {
-    let result = Scratch::new().run(&["validate", "mesh.bdf", "-j"]);
+    let result = Scratch::new().run(&["inspect", "mesh.bdf", "-j"]);
     assert!(result.status.success());
     let out = String::from_utf8(result.stdout).unwrap();
     assert!(out.contains("\"schema_version\":1"));
@@ -142,13 +151,31 @@ fn validation_json_has_version_and_counts() {
 #[test]
 fn conversion_preview_shows_exact_notices_without_writing() {
     let s = Scratch::new();
-    let result = s.run(&["preview", "mesh.bdf", "mesh.vtu", "--json"]);
+    let result = s.run(&["plan", "mesh.bdf", "mesh.vtu", "--json"]);
     assert!(result.status.success());
     let output = String::from_utf8(result.stdout).unwrap();
-    assert!(output.contains("\"operation\":\"conversion-preview\""));
+    assert!(output.contains("\"operation\":\"conversion-plan\""));
+    assert!(output.contains("\"scope\":\"input-to-output-route\""));
     assert!(output.contains("\"complete\":true"));
+    assert!(output.contains("\"notice_scope\":\"source-and-destination\""));
     assert!(output.contains("\"source_format\":\"bdf\""));
     assert!(!s.0.join("mesh.vtu").exists());
+}
+
+#[test]
+fn inspecting_a_source_does_not_assert_destination_viability() {
+    let s = Scratch::new();
+    let input = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/donut.stl");
+    let inspected = s.run(&["inspect", input, "--json"]);
+    assert!(inspected.status.success());
+    assert!(
+        String::from_utf8_lossy(&inspected.stdout)
+            .contains("\"scope\":\"supported-mesh-and-fields-subset\"")
+    );
+    let planned = s.run(&["plan", input, "donut.vti", "--json"]);
+    assert_eq!(planned.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&planned.stdout).contains("hex8 infill"));
+    assert!(!s.0.join("donut.vti").exists());
 }
 
 /// Voxel previews report grid work before allocating or writing occupancy.
@@ -157,7 +184,7 @@ fn voxel_preview_reports_dimensions_without_writing() {
     let s = Scratch::new();
     let input = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/donut.stl");
     let result = s.run(&[
-        "preview",
+        "plan",
         input,
         "donut.vti",
         "--infill-shape",
@@ -169,6 +196,7 @@ fn voxel_preview_reports_dimensions_without_writing() {
     assert!(result.status.success());
     let output = String::from_utf8(result.stdout).unwrap();
     assert!(output.contains("\"complete\":false"));
+    assert!(output.contains("\"notice_scope\":\"source-only\""));
     assert!(output.contains("\"dimensions\":[26,26,7]"));
     assert!(output.contains("\"cells\":4732"));
     assert!(!s.0.join("donut.vti").exists());
@@ -250,7 +278,7 @@ fn surface_and_volume_mesh_flags_convert_closed_geometry() {
         "{}",
         String::from_utf8_lossy(&rebuilt.stderr)
     );
-    let validated = s.run(&["validate", "rebuilt.vtu", "--json"]);
+    let validated = s.run(&["inspect", "rebuilt.vtu", "--json"]);
     assert!(validated.status.success());
     assert!(
         String::from_utf8(validated.stdout)
@@ -278,7 +306,7 @@ fn surface_and_volume_mesh_flags_convert_closed_geometry() {
         );
         let report = String::from_utf8(output.stdout).unwrap();
         assert!(report.contains(&format!("\"cells\":{cells}")), "{report}");
-        assert!(s.run(&["validate", &name]).status.success());
+        assert!(s.run(&["inspect", &name]).status.success());
     }
 
     let missing_mesher = s.run(&[
@@ -318,7 +346,7 @@ fn surface_and_volume_mesh_flags_convert_closed_geometry() {
         let tet_mesh = std::fs::read_to_string(s.0.join("tets.vtu")).unwrap();
         assert!(tet_mesh.contains("connectivity"));
         assert!(tet_mesh.contains("types"));
-        assert!(s.run(&["validate", "tets.vtu"]).status.success());
+        assert!(s.run(&["inspect", "tets.vtu"]).status.success());
     }
 }
 
@@ -478,9 +506,7 @@ fn overwrite_rejects_source_aliases_and_symlinks() {
 fn overwrite_replaces_both_paired_outputs_after_acceptance() {
     let s = Scratch::new();
     assert_eq!(
-        s.run(&["validate", "mesh.bdf", "--overwrite"])
-            .status
-            .code(),
+        s.run(&["inspect", "mesh.bdf", "--overwrite"]).status.code(),
         Some(2)
     );
     let first = s.0.join("zeros.op2");
@@ -570,9 +596,9 @@ fn companion_mesh_option_is_only_for_op2_and_needs_a_mesh_format() {
 fn strict_validation_fails_on_opaque_material() {
     let s = Scratch::new();
     std::fs::write(s.0.join("opaque.bdf"), "GRID,1\nMAT1,7,2.1+11\n").unwrap();
-    assert!(s.run(&["validate", "opaque.bdf"]).status.success());
+    assert!(s.run(&["inspect", "opaque.bdf"]).status.success());
     assert_eq!(
-        s.run(&["validate", "opaque.bdf", "--strict"]).status.code(),
+        s.run(&["inspect", "opaque.bdf", "--strict"]).status.code(),
         Some(1)
     );
 }
@@ -580,7 +606,7 @@ fn strict_validation_fails_on_opaque_material() {
 /// Return a structured JSON diagnostic for absent input.
 #[test]
 fn missing_file_json_error() {
-    let result = Scratch::new().run(&["validate", "absent.bdf", "--json"]);
+    let result = Scratch::new().run(&["inspect", "absent.bdf", "--json"]);
     assert_eq!(result.status.code(), Some(1));
     assert!(
         String::from_utf8(result.stdout)
@@ -629,7 +655,7 @@ fn human_validation_reports_counts_and_omissions() {
     // BDF and INP share the projected-data CLI path, but INP also supplies
     // a source omission that strict validation must reject.
     let s = Scratch::new();
-    let validated = s.run(&["validate", "mesh.bdf"]);
+    let validated = s.run(&["inspect", "mesh.bdf"]);
     assert!(validated.status.success());
     assert!(
         String::from_utf8(validated.stdout)
@@ -642,12 +668,12 @@ fn human_validation_reports_counts_and_omissions() {
         "*NODE\n1,0,0,0\n2,1,0,0\n*ELEMENT, TYPE=T3D2\n10,1,2\n*MATERIAL, NAME=STEEL\n",
     )
     .unwrap();
-    let relaxed = s.run(&["validate", "omitted.inp"]);
+    let relaxed = s.run(&["inspect", "omitted.inp"]);
     assert!(relaxed.status.success());
     let relaxed = String::from_utf8(relaxed.stdout).unwrap();
     assert!(relaxed.contains("INP supported-subset checks passed: 2 points"));
     assert!(relaxed.contains("Omission:"));
-    let strict = s.run(&["validate", "omitted.inp", "-s", "-j"]);
+    let strict = s.run(&["inspect", "omitted.inp", "-s", "-j"]);
     assert_eq!(strict.status.code(), Some(1));
     assert!(
         String::from_utf8(strict.stdout)
@@ -832,16 +858,16 @@ fn non_bdf_result_companion_requires_conversion_acceptance() {
             String::from_utf8_lossy(&result.stderr)
         );
     }
-    let inspected = s.run(&["validate", "zeros.op2", "--mesh", "mesh.vtu", "-j"]);
+    let inspected = s.run(&["inspect", "zeros.op2", "--mesh", "mesh.vtu", "-j"]);
     assert!(inspected.status.success());
     let receipt = String::from_utf8(inspected.stdout).unwrap();
     assert!(receipt.contains("\"passed\":true"));
     assert!(receipt.contains("basic-frame"));
-    let strict = s.run(&["validate", "zeros.op2", "--mesh", "mesh.vtu", "-s"]);
+    let strict = s.run(&["inspect", "zeros.op2", "--mesh", "mesh.vtu", "-s"]);
     assert_eq!(strict.status.code(), Some(1));
     assert_eq!(
         s.run(&[
-            "validate",
+            "inspect",
             "zeros.op2",
             "--mesh",
             "mesh.vtu",
@@ -918,13 +944,13 @@ fn bounded_and_explicit_format_input_fail_before_output_creation() {
 fn malformed_cli_options_fail_without_writing() {
     let s = Scratch::new();
     for command in [
-        vec!["validate", "mesh.bdf", "--step", "bad"],
-        vec!["validate", "mesh.bdf", "--max-bytes", "0"],
-        vec!["validate", "mesh.bdf", "--max-bytes", "bad"],
-        vec!["validate", "mesh.bdf", "--unknown"],
-        vec!["validate", "mesh.bdf", "--from"],
-        vec!["validate", "mesh.bdf", "--accept-basic-frame"],
-        vec!["validate", "mesh.bdf", "--mesh", "mesh.bdf"],
+        vec!["inspect", "mesh.bdf", "--step", "bad"],
+        vec!["inspect", "mesh.bdf", "--max-bytes", "0"],
+        vec!["inspect", "mesh.bdf", "--max-bytes", "bad"],
+        vec!["inspect", "mesh.bdf", "--unknown"],
+        vec!["inspect", "mesh.bdf", "--from"],
+        vec!["inspect", "mesh.bdf", "--accept-basic-frame"],
+        vec!["inspect", "mesh.bdf", "--mesh", "mesh.bdf"],
         vec!["--formats", "--mesh", "mesh.bdf"],
         vec!["--formats", "--json"],
         vec![
@@ -945,7 +971,7 @@ fn malformed_cli_options_fail_without_writing() {
         let result = s.run(&command);
         assert_eq!(result.status.code(), Some(2), "{command:?}");
     }
-    let unknown_format = s.run(&["validate", "mesh.bdf", "--from", "bogus", "--json"]);
+    let unknown_format = s.run(&["inspect", "mesh.bdf", "--from", "bogus", "--json"]);
     assert_eq!(unknown_format.status.code(), Some(1));
     assert!(
         String::from_utf8(unknown_format.stdout)
@@ -995,15 +1021,15 @@ fn synthetic_result_rejects_nonbasic_output_frames_and_mesh_sources() {
 fn entry_help_and_bdf_diagnostics_are_visible_to_human_users() {
     let s = Scratch::new();
     assert!(s.run(&[]).status.success());
-    assert!(s.run(&["validate", "mesh.bdf", "--help"]).status.success());
+    assert!(s.run(&["inspect", "mesh.bdf", "--help"]).status.success());
     assert_eq!(
-        s.run(&["validate", "mesh.bdf", "--accept-all"])
+        s.run(&["inspect", "mesh.bdf", "--accept-all"])
             .status
             .code(),
         Some(2)
     );
     std::fs::write(s.0.join("invalid.bdf"), "GRID,1,42,0,0,0\n").unwrap();
-    let validated = s.run(&["validate", "invalid.bdf"]);
+    let validated = s.run(&["inspect", "invalid.bdf"]);
     assert_eq!(validated.status.code(), Some(1));
     assert!(
         String::from_utf8(validated.stderr)

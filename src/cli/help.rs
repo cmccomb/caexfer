@@ -10,9 +10,9 @@ USAGE
   caexfer COMMAND [OPTIONS]
 
 COMMANDS
-  validate  Check supported data, counts, and omissions
-  preview   Inspect a proposed conversion without writing output
-  convert   Write a supported projection to an output file
+  inspect  Check source data and report counts and notices
+  plan     Check a proposed route or estimate grid work; write nothing
+  convert  Write a supported projection to an output file
 
 Run 'caexfer COMMAND --help' for options and examples.
 
@@ -23,10 +23,10 @@ GLOBAL OPTIONS
 ";
 
 /// Explain validation and when source omissions make it fail.
-const VALIDATE: &str = "caexfer validate: check supported data, counts, and omissions
+const INSPECT: &str = "caexfer inspect: check one source file
 
 USAGE
-  caexfer validate INPUT [OPTIONS]
+  caexfer inspect INPUT [OPTIONS]
 
 INPUT OPTIONS
   --from FORMAT         Override the input extension; see 'caexfer --formats'
@@ -40,11 +40,15 @@ GENERAL OPTIONS
   -j, --json            Return the report as JSON (schema_version=1)
   -h, --help            Show this command's help
 
+Reads the supported source subset and reports its counts and notices. It does
+not check whether any particular output format can represent that data. Use
+'caexfer plan INPUT OUTPUT' to check a proposed conversion.
+
 EXAMPLES
-  caexfer validate model.bdf
-  caexfer validate model.bdf --strict --json
-  caexfer validate results.op2 --mesh model.bdf --subcase 1
-  caexfer validate results.op2 --mesh model.vtu
+  caexfer inspect model.bdf
+  caexfer inspect model.bdf --strict --json
+  caexfer inspect results.op2 --mesh model.bdf --subcase 1
+  caexfer inspect results.op2 --mesh model.vtu
 ";
 
 /// Explain conversion in the order users choose source, destination, and receipt.
@@ -101,10 +105,10 @@ EXAMPLES
 ";
 
 /// Explain the read-only route with the same source and destination choices.
-const PREVIEW: &str = "caexfer preview: inspect a proposed conversion without writing output
+const PLAN: &str = "caexfer plan: check a proposed conversion without writing output
 
 USAGE
-  caexfer preview INPUT OUTPUT [OPTIONS]
+  caexfer plan INPUT OUTPUT [OPTIONS]
 
 INPUT OPTIONS
   --from FORMAT              Override the input extension; see 'caexfer --formats'
@@ -127,21 +131,22 @@ GENERAL OPTIONS
   -j, --json                 Return the plan as JSON (schema_version=1)
   -h, --help                 Show this command's help
 
-Voxelization reports grid dimensions, cell count, and sampler work without
-building occupancy. Other routes run a complete projection into a discard
-stream and may take as long as conversion. No output file is created.
+Most routes run the destination writer into a discard stream, so destination
+notices are exact and planning may take as long as conversion. Grid infill
+reports dimensions, cell count, and sampler work before occupancy sampling;
+complete=false means destination effects remain unchecked. No output is created.
 
 EXAMPLES
-  caexfer preview model.bdf model.vtu
-  caexfer preview examples/donut.stl donut.vti --infill-shape hex8 --infill-unit-size 0.25
-  caexfer preview other.stl aligned.vti --match-grid donut.vti
+  caexfer plan model.bdf model.vtu
+  caexfer plan examples/donut.stl donut.vti --infill-shape hex8 --infill-unit-size 0.25
+  caexfer plan other.stl aligned.vti --match-grid donut.vti
 ";
 
 /// Return the help for the selected command; parsing ensures it is recognized.
 pub(super) fn for_command(command: &str) -> &'static str {
     match command {
-        "validate" => VALIDATE,
-        "preview" => PREVIEW,
+        "inspect" => INSPECT,
+        "plan" => PLAN,
         "convert" => CONVERT,
         _ => OVERVIEW,
     }

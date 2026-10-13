@@ -74,7 +74,7 @@ fn set_option<T>(
 /// Detect an OP2 destination when validating OP2-only options before dispatch.
 fn is_op2_output(args: &Args) -> bool {
     // Inspect only the destination suffix; the full format check runs later.
-    matches!(args.command.as_str(), "convert" | "preview")
+    matches!(args.command.as_str(), "convert" | "plan")
         && args
             .paths
             .get(1)
@@ -122,7 +122,7 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             }),
             Some(topic) if raw.len() == 2 => {
                 let topic = text(topic)?;
-                if !matches!(topic, "validate" | "convert" | "preview") {
+                if !matches!(topic, "inspect" | "convert" | "plan") {
                     return Err(usage(format!("unknown help topic {topic:?}; use --help")));
                 }
                 Ok(Args {
@@ -149,7 +149,7 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             ..Args::default()
         });
     }
-    if !matches!(command.as_str(), "validate" | "convert" | "preview") {
+    if !matches!(command.as_str(), "inspect" | "convert" | "plan") {
         return Err(usage(format!("unknown command {command:?}; use --help")));
     }
     // A command name alone requests its help, like the bare executable.
@@ -300,15 +300,15 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
 
     // Command arity and cross-option rules are checked after collection so
     // flags may appear before or after path arguments.
-    let expected = if args.command == "validate" { 1 } else { 2 };
+    let expected = if args.command == "inspect" { 1 } else { 2 };
     if args.paths.len() != expected {
         return Err(usage(format!(
             "{} expects {expected} path argument(s)",
             args.command
         )));
     }
-    if args.strict && args.command != "validate" {
-        return Err(usage("--strict is only for validate"));
+    if args.strict && args.command != "inspect" {
+        return Err(usage("--strict is only for inspect"));
     }
     if args.overwrite && args.command != "convert" {
         return Err(usage("--overwrite is only for convert"));
@@ -345,7 +345,7 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
         ));
     }
     if args.msh_version.is_some() {
-        let msh_target = matches!(args.command.as_str(), "convert" | "preview")
+        let msh_target = matches!(args.command.as_str(), "convert" | "plan")
             && Format::from_output_path(&args.paths[1]).is_ok_and(|format| format == Format::Msh);
         let msh_companion = args.mesh_out.as_deref().is_some_and(|path| {
             Format::from_output_path(path).is_ok_and(|format| format == Format::Msh)
@@ -359,8 +359,8 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             "--infill-shape and --infill-unit-size must be used together",
         ));
     }
-    if args.infill_shape.is_some() && !matches!(args.command.as_str(), "convert" | "preview") {
-        return Err(usage("--infill-shape applies only to convert or preview"));
+    if args.infill_shape.is_some() && !matches!(args.command.as_str(), "convert" | "plan") {
+        return Err(usage("--infill-shape applies only to convert or plan"));
     }
     if args.infill_shape.is_some() && args.surface {
         return Err(usage("--infill-shape cannot be combined with --surface"));
@@ -372,14 +372,14 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
     {
         return Err(usage("--gmsh applies only to tet4 infill"));
     }
-    if args.surface && !matches!(args.command.as_str(), "convert" | "preview") {
-        return Err(usage("--surface applies only to convert or preview"));
+    if args.surface && !matches!(args.command.as_str(), "convert" | "plan") {
+        return Err(usage("--surface applies only to convert or plan"));
     }
     if args.gmsh.is_some() && args.infill_shape != Some(InfillShape::Tet4) {
         return Err(usage("--gmsh requires --infill-shape tet4"));
     }
-    if args.match_grid.is_some() && !matches!(args.command.as_str(), "convert" | "preview") {
-        return Err(usage("--match-grid applies only to convert or preview"));
+    if args.match_grid.is_some() && !matches!(args.command.as_str(), "convert" | "plan") {
+        return Err(usage("--match-grid applies only to convert or plan"));
     }
     if args.match_grid.is_some()
         && (args.infill_shape.is_some() || args.surface || args.gmsh.is_some())
@@ -389,7 +389,7 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
         ));
     }
     if args.smooth_iterations.is_some()
-        && (!matches!(args.command.as_str(), "convert" | "preview")
+        && (!matches!(args.command.as_str(), "convert" | "plan")
             || Format::from_output_path(&args.paths[1]).ok() != Some(Format::Stl))
     {
         return Err(usage("--smooth-iterations applies only to STL output"));
@@ -416,9 +416,9 @@ mod tests {
     /// Reject repeated option flags so command intent is unambiguous.
     #[test]
     fn duplicate_option_rejected() {
-        assert!(args(&["validate", "x.bdf", "--json", "--json"]).is_err());
-        assert!(args(&["validate", "x.bdf", "--json", "-j"]).is_err());
-        assert!(args(&["validate", "x.bdf", "--strict", "-s"]).is_err());
+        assert!(args(&["inspect", "x.bdf", "--json", "--json"]).is_err());
+        assert!(args(&["inspect", "x.bdf", "--json", "-j"]).is_err());
+        assert!(args(&["inspect", "x.bdf", "--strict", "-s"]).is_err());
         assert!(args(&["convert", "x.vtu", "y.vtu", "--surface", "--surface"]).is_err());
     }
 
@@ -430,7 +430,7 @@ mod tests {
                 .unwrap()
                 .surface
         );
-        assert!(args(&["validate", "x.vtu", "--surface"]).is_err());
+        assert!(args(&["inspect", "x.vtu", "--surface"]).is_err());
         assert!(
             args(&[
                 "convert",
@@ -516,7 +516,7 @@ mod tests {
         assert!(args(&["convert", "x.bdf", "x.vtu", "-s"]).is_err());
         assert!(
             args(&[
-                "validate",
+                "inspect",
                 "x.op2",
                 "--mesh",
                 "x.vtu",
@@ -529,8 +529,8 @@ mod tests {
     /// Short spellings follow the same command scopes as their long forms.
     #[test]
     fn short_json_and_strict_options() {
-        let validate = args(&["validate", "x.bdf", "-j", "-s"]).unwrap();
-        assert!(validate.json && validate.strict);
+        let inspect = args(&["inspect", "x.bdf", "-j", "-s"]).unwrap();
+        assert!(inspect.json && inspect.strict);
         let convert = args(&["convert", "x.bdf", "x.vtu", "-j"]).unwrap();
         assert!(convert.json);
     }
@@ -623,7 +623,7 @@ mod tests {
         }
         assert!(
             args(&[
-                "validate",
+                "inspect",
                 "shape.vti",
                 "--infill-shape",
                 "hex8",
@@ -670,14 +670,14 @@ mod tests {
             ])
             .is_err()
         );
-        assert!(args(&["validate", "shape.stl", "--smooth-iterations", "10"]).is_err());
+        assert!(args(&["inspect", "shape.stl", "--smooth-iterations", "10"]).is_err());
     }
 
     /// Treat paths after -- as paths even when they begin with a hyphen.
     #[test]
     fn double_dash_supports_dash_path() {
         assert_eq!(
-            args(&["validate", "--", "-mesh.bdf"]).unwrap().paths[0],
+            args(&["inspect", "--", "-mesh.bdf"]).unwrap().paths[0],
             PathBuf::from("-mesh.bdf")
         );
     }

@@ -3,16 +3,16 @@
 `caexfer` is one Rust package with a library and a CLI. It requires Rust 1.86
 or newer. Add the published library with `cargo add caexfer`.
 
-The public library has two file operations:
+The public library has three file operations:
 
 | Operation | Result |
 | --- | --- |
-| `caexfer::validate(input, &options)` | Supported-subset counts, source omissions, and a `passed` verdict |
+| `caexfer::validate(input, &options)` | Source subset counts, source notices, and a `passed` verdict |
 | `caexfer::convert(input, output, &options)` | A newly installed output file and a typed conversion report |
-| `caexfer::preview(input, output, &options)` | Read-only conversion plan; full dry projection except fast mesh voxel estimates |
+| `caexfer::preview(input, output, &options)` | Destination-specific dry projection or a grid work estimate; no output file |
 
 The `core`, `conversion`, and format adapter modules are implementation details.
-Both operations infer formats from filename extensions; set `Options.input_format`
+All three operations infer formats from filename extensions; set `Options.input_format`
 when the input suffix is ambiguous. The output suffix chooses the writer.
 `Format`, `MshVersion`, `Options`, report types, and `Error` are public support
 types. See [format limits](SUPPORT.md) for what each route can carry.
@@ -38,7 +38,9 @@ assumptions. For OP2/PCH with a non-BDF companion mesh, validation reports an
 unverified basic-frame assumption without requiring acceptance. Set
 `Options.strict = true` to make any notice set `report.passed = false`.
 Parse, I/O, size-limit, and unsafe-projection failures return an `Error`. A
-passing report does not validate a full solver model.
+passing report does not validate a full solver model or establish that a
+particular destination can represent the source. Use `preview(input, output,
+&options)` for a proposed route.
 
 ## Convert a file
 

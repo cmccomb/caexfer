@@ -8,8 +8,8 @@ run without Python.
 
 ```sh
 caexfer --formats
-caexfer validate model.bdf --json
-caexfer validate results.op2 --mesh model.vtu -j
+caexfer inspect model.bdf --json
+caexfer inspect results.op2 --mesh model.vtu -j
 caexfer convert model.bdf model.vtu
 caexfer convert model.bdf model.msh --msh-version 2.2
 caexfer convert results.op2 results.vtu --mesh model.bdf
@@ -43,7 +43,7 @@ caexfer convert mesh.unv mesh.vtu
 caexfer convert results.exo results.vtu --step 0
 caexfer convert examples/donut.stl donut.vti --infill-shape hex8 --infill-unit-size 0.25 --accept-omissions
 caexfer convert donut.vti donut-roundtrip.stl --accept-omissions
-caexfer preview examples/donut.stl donut.vti --infill-shape hex8 --infill-unit-size 0.25
+caexfer plan examples/donut.stl donut.vti --infill-shape hex8 --infill-unit-size 0.25
 caexfer convert other.stl aligned.vti --match-grid donut.vti --accept-omissions
 ```
 
@@ -51,22 +51,30 @@ These commands use example input names. The [format limits](SUPPORT.md) describe
 which cells, sets, fields, and time data each route can retain.
 
 `caexfer --help` lists the commands and global options. `caexfer -f` and
-`caexfer --formats` list format capabilities. Run `caexfer validate` or
-`caexfer convert` without paths to see that command's options and examples.
-`--help` works after either command too. Paths can occur
+`caexfer --formats` list format capabilities. Run `caexfer inspect`,
+`caexfer plan`, or `caexfer convert` without paths to see each command's
+options and examples. `--help` works after any command too. Paths can occur
 before or after options; use `--` for paths beginning with a hyphen. Filenames
 use OS-native strings internally; JSON/human display of non-UTF-8 paths is
 lossy, not an exact path serialization.
 
 `-j` abbreviates `--json` for all commands; `-s` abbreviates `--strict` for
-validation.
+`inspect`.
+
+`inspect INPUT` reads the supported source subset and reports counts and source
+notices. It cannot establish whether a chosen destination can represent that
+source. `plan INPUT OUTPUT` checks the proposed route without writing output.
+Most routes use the destination writer and report exact source and destination
+notices. Grid infill stops after a size and work estimate; `complete: false`
+means sampling and destination checks remain for conversion. A source can pass
+`inspect` while `plan` rejects an unsupported route.
 
 | Command or option | Result |
 | --- | --- |
 | `-f`, `--formats` | Actual read/write capabilities, not a roadmap |
-| `validate INPUT` | Supported subset checks, projected counts, and source omissions |
+| `inspect INPUT` | Source subset checks, projected counts, and source notices |
+| `plan INPUT OUTPUT` | Destination-specific dry projection or grid work estimate; no output file |
 | `convert INPUT OUTPUT` | Project to a writable format; confirm each reported change before installation |
-| `preview INPUT OUTPUT` | Read-only conversion plan with counts and notices; voxel routes show grid dimensions and sampling limits |
 
 Input extensions are `.bdf`, `.nas`, `.dat`, `.pch`, `.vtu`, `.vti`, `.vox`, `.vtk`, `.msh`, `.inp`,
 `.frd`, `.op2`, `.stl`, `.su2`, `.unv`, `.exo`, `.e`, and `.exodus`
@@ -87,7 +95,7 @@ retains origin and spacing; VOX does not. See [format limits](SUPPORT.md).
 `--match-grid FILE` uses an existing supported VTI occupancy grid's origin,
 spacing, and dimensions for Hex8 mesh voxelization. Omit infill flags when
 using it. The surface must fit completely inside the reference
-grid. Reference occupancy values are ignored. `preview` creates no output.
+grid. Reference occupancy values are ignored. `plan` creates no output.
 For ordinary conversions it performs the full projection into a discard
 stream, giving exact destination notices. For mesh voxelization it stops
 before occupancy allocation and sampling; it reports estimated dimensions,
@@ -107,7 +115,7 @@ OP2 output carries one displacement table and needs a separately retained
 matching mesh. `--mesh-out FILE` optionally writes a geometry-only companion
 in BDF, VTU, VTK, MSH, INP, or FRD format. `--subcase N` and
 zero-based `--step N` select an OP2 or PCH displacement result. For FRD, `--step N` selects the
-step number. These selection options also work with `validate`.
+step number. These selection options also work with `inspect`.
 For Exodus input, `--step N` selects a zero-based time step. Without it, the
 reader carries all complete scalar fields and times that the destination can
 represent.
@@ -135,7 +143,7 @@ coordinates into the basic frame with a trusted BDF preprocessor first.
 the approval prompt, run `caexfer convert examples/plate.bdf model.vtu` from
 the repository root in a terminal, using a new output filename.
 
-For `validate` and `convert`, `--json` returns the report on stdout as JSON with
+For `inspect`, `plan`, and `convert`, `--json` returns the report on stdout as JSON with
 schema_version=1. Human-readable conversion omission reports go to stderr;
 JSON conversion reports place them in an `omissions` array with each item's
 `stage` (`source`, `destination`, or `assumption`), `acceptance_flag`, and detail. A paired export
@@ -144,10 +152,10 @@ adds `voxel_grid` with dimensions and occupied cell count. JSON error
 output also goes to stdout. Schema version 1 is intentionally small; consumers
 should tolerate new keys.
 
-Exit 0 means the requested scoped operation succeeded. `validate` reports
+Exit 0 means the requested scoped operation succeeded. `inspect` reports
 projected counts, omissions, and assumptions; without `--strict`, notices do
 not fail it. Exit 1 means I/O, parsing, projection, or validation failed.
-`validate --strict` also exits 1 on an omission or assumption. Exit 2 means
+`inspect --strict` also exits 1 on an omission or assumption. Exit 2 means
 invalid CLI usage, including an unattended conversion that needs acceptance.
 Use stable diagnostic `code` values rather than parsing human descriptions.
 The version's code list can grow.

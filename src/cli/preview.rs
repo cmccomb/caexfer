@@ -15,11 +15,13 @@ pub(super) fn run_preview(args: &Args) -> Result<u8> {
 }
 
 /// Show a read-only plan. Voxel plans stop before sampling; other routes are dry projections.
+#[allow(clippy::too_many_lines)] // JSON and human receipts share the same route fields.
 fn present_preview(args: &Args, report: &PreviewReport) -> Result<()> {
     if args.json {
         let mut fields = vec![
             ("schema_version", "1".into()),
-            ("operation", quote("conversion-preview")),
+            ("operation", quote("conversion-plan")),
+            ("scope", quote("input-to-output-route")),
             ("input", path_json(&args.paths[0])),
             ("output", path_json(&args.paths[1])),
             ("source_format", quote(report.source_format.name())),
@@ -29,6 +31,14 @@ fn present_preview(args: &Args, report: &PreviewReport) -> Result<()> {
             ("cells", report.cells.to_string()),
             ("fields", report.fields.to_string()),
             ("complete", report.complete.to_string()),
+            (
+                "notice_scope",
+                quote(if report.complete {
+                    "source-and-destination"
+                } else {
+                    "source-only"
+                }),
+            ),
             ("omissions", omissions_json(&report.omissions)),
             (
                 "limit",
@@ -73,7 +83,7 @@ fn present_preview(args: &Args, report: &PreviewReport) -> Result<()> {
         emit(&object(fields))?;
     } else {
         emit(&format!(
-            "Preview {} → {}: {} → {}; {} bytes, {} points, {} cells, {} fields.",
+            "Conversion plan {} → {}: {} → {}; source has {} bytes, {} points, {} cells, {} fields.",
             args.paths[0].display(),
             args.paths[1].display(),
             report.source_format.name(),
@@ -108,8 +118,12 @@ fn present_preview(args: &Args, report: &PreviewReport) -> Result<()> {
                 emit(&format!("Companion notice: {}", omission.detail))?;
             }
         }
-        if !report.complete {
-            emit("Voxel plan only; destination notices require conversion.")?;
+        if report.complete {
+            emit("Destination writer checked; notices cover source and destination.")?;
+        } else {
+            emit(
+                "Grid work estimate only; sampling and destination checks remain for conversion.",
+            )?;
         }
         emit("No output written.")?;
     }

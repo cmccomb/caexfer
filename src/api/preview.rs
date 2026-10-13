@@ -24,11 +24,13 @@ pub struct PreviewReport {
     pub cells: usize,
     /// Projected source numeric field count.
     pub fields: usize,
-    /// Exact source notices, plus destination notices when `complete` is true.
+    /// Source notices, plus destination notices when `complete` is true.
     pub omissions: Vec<Omission>,
     /// Planned voxel geometry and conservative ray-triangle test count.
     pub voxel_estimate: Option<VoxelEstimate>,
-    /// Whether the preview completed a full conversion into a discard stream.
+    /// Whether the destination writer completed a full dry projection.
+    /// False means only grid size and sampling work were estimated; output
+    /// representability and destination omissions remain unchecked.
     pub complete: bool,
     /// A limit or output-format reason that prevents the planned voxelization.
     pub limit: Option<String>,
