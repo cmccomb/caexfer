@@ -102,6 +102,30 @@ caexfer convert solid.vti smooth-shell.stl --smooth-iterations 10 --accept-omiss
 caexfer convert closed.stl volume.vtu --voxel-size 0.5 --accept-omissions
 ```
 
+### Donut voxel round trip
+
+The [donut STL](examples/donut.stl) is a closed, curved torus with a center hole
+and 4,608 triangles. This comparison samples it into VTI occupancy at three
+cell sizes, then exports each grid back to STL. Every view uses the same camera
+and scale.
+
+![Original donut STL beside 0.75, 0.50, and 0.25 voxel-size STL reconstructions, plus the smoothed 0.25 reconstruction; oblique and top views show the retained hole and progressively finer stair steps](assets/donut-voxel-comparison.png)
+
+The 0.75 grid has 66 occupied cells and differs from the original by −4.21%
+in enclosed volume. At 0.50, 238 cells differ by +2.35%; at 0.25, 1,859 cells
+differ by −0.07%. All reconstructed STL surfaces are watertight and retain the
+hole. The near-zero volume difference at 0.25 does not mean the local surface
+is exact: voxel steps remain. Ten smoothing passes round those steps and give
+a +0.97% volume difference, but cannot recover detail smaller than a cell.
+
+Reproduce the finer round trip from a checkout of this branch:
+
+```sh
+cargo run -- convert examples/donut.stl donut.vti --voxel-size 0.25 --accept-omissions
+cargo run -- convert donut.vti donut-roundtrip.stl --accept-omissions
+cargo run -- convert donut.vti donut-smoothed.stl --smooth-iterations 10 --accept-omissions
+```
+
 These are voxel-center samples and blocky meshes, not conforming tetrahedral
 meshing. VOX has no physical origin or spacing, and its palette is not carried
 through the occupancy model. The conversion report lists those losses.

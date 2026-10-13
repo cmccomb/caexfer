@@ -4,6 +4,7 @@
 | --- | --- |
 | `logo.svg` | Editable CAE Ferris mark used by the repository README. |
 | `conversion-flow.svg` | Editable flowchart of format groups and supported conversion directions. |
+| `donut-voxel-comparison.png` | Matched-view STL → VTI → STL comparison at three voxel sizes and one smoothed result. |
 | `rustacean-flat-happy.svg` | Retained upstream Ferris artwork. |
 
 ## CAE Ferris mark
@@ -38,6 +39,18 @@ supported projections, so it does not promise lossless transfer. Keep its
 accessible title and description current when adapter capabilities change.
 Review it at full size and at the README's typical displayed width.
 The README uses a relative image URL so each branch shows its own diagram.
+
+## Donut voxel comparison
+
+The input is the authored, watertight `examples/donut.stl`, a torus with major
+radius 2.45 and tube radius 0.78 in unspecified units. The image shows this
+source STL and STL outputs from VTI occupancy grids with cell sizes 0.75, 0.50,
+and 0.25. The last panel smooths the 0.25 output for ten passes. Oblique and
+top views use the same camera and scale across all panels. Captions report
+occupied voxel counts and enclosed-volume differences relative to the source.
+The README gives the conversion commands and explains the limits of those
+measurements. The image illustrates geometry occupancy, not solver-result
+interpolation.
 
 ## Ferris source and license
 
