@@ -101,10 +101,10 @@ Both the CLI and public library stage writes and refuse an existing path by
 default. The CLI can replace existing regular output files with `--overwrite`
 after conversion and acceptance, including paired OP2 and mesh output. A
 second install failure can leave the first file replaced. The library remains
-no-clobber. Both paths retain completed recovery files after a partial pair;
-the CLI also retains links to previous outputs when replacing files. The
-internal stream writers may leave partial output in their
-caller-owned streams after an I/O failure.
+no-clobber and retains the completed second file after a partial pair. The CLI
+retains the staged companion and, when replacing files, links to previous
+outputs. Internal stream writers may leave partial output in caller-owned
+streams after an I/O failure.
 
 ## What remains to earn a wider claim
 
