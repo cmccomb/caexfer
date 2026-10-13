@@ -122,8 +122,8 @@ caexfer convert another.stl aligned.vti --match-grid solid.vti --accept-omission
 `--match-grid` uses an existing VTI file's origin, spacing, and dimensions for
 Hex8 sampling so separate meshes land on the same cells. Geometry outside that
 grid is rejected rather than clipped. `caexfer inspect INPUT` reports source
-counts and notices; `caexfer plan INPUT OUTPUT` checks a proposed destination
-or estimates grid work without writing an output.
+counts and notices; `caexfer convert INPUT OUTPUT --preview` checks a proposed
+destination or estimates grid work without writing an output.
 
 Surface extraction keeps source point values and discards cell values, sets,
 and property IDs; extracted faces receive new element IDs. Volume meshing

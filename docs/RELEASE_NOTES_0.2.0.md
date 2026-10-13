@@ -9,8 +9,8 @@ exposed triangle surface. An optional smoothing pass softens the STL surface.
 Conversion reports identify lost fields, IDs, scale, and palette details.
 Mesh voxelization can match an existing VTI grid's origin, spacing, and
 dimensions, with a bounds check that rejects clipping. `caexfer inspect INPUT`
-reports source counts and notices. The read-only `caexfer plan INPUT OUTPUT`
-covers every writable route:
+reports source counts and notices. The read-only
+`caexfer convert INPUT OUTPUT --preview` covers every writable route:
 ordinary conversions produce exact dry
 projection notices, while voxelization estimates grid dimensions and sampler
 work before occupancy allocation.

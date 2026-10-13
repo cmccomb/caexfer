@@ -41,10 +41,10 @@ fn dispatch(args: &Args) -> Result<u8> {
     }
 
     if args.command == "convert" {
+        if args.preview {
+            return run_preview(args);
+        }
         return run_convert(args);
-    }
-    if args.command == "plan" {
-        return run_preview(args);
     }
     run_validate(args)
 }
@@ -55,7 +55,7 @@ pub(crate) fn run() {
     let raw: Vec<OsString> = std::env::args_os().skip(1).collect();
     let wants_json = raw
         .first()
-        .is_some_and(|command| command == "inspect" || command == "convert" || command == "plan")
+        .is_some_and(|command| command == "inspect" || command == "convert")
         && raw.iter().any(|arg| arg == "--json");
     let status = match parse_args(&raw).and_then(|args| dispatch(&args)) {
         Ok(status) => status,

@@ -13,6 +13,7 @@ pub(super) struct Args {
     pub(super) help_requested: bool,
     pub(super) paths: Vec<PathBuf>,
     pub(super) json: bool,
+    pub(super) preview: bool,
     pub(super) strict: bool,
     pub(super) overwrite: bool,
     pub(super) accept_omissions: bool,
@@ -74,7 +75,7 @@ fn set_option<T>(
 /// Detect an OP2 destination when validating OP2-only options before dispatch.
 fn is_op2_output(args: &Args) -> bool {
     // Inspect only the destination suffix; the full format check runs later.
-    matches!(args.command.as_str(), "convert" | "plan")
+    args.command == "convert"
         && args
             .paths
             .get(1)
@@ -122,7 +123,7 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             }),
             Some(topic) if raw.len() == 2 => {
                 let topic = text(topic)?;
-                if !matches!(topic, "inspect" | "convert" | "plan") {
+                if !matches!(topic, "inspect" | "convert") {
                     return Err(usage(format!("unknown help topic {topic:?}; use --help")));
                 }
                 Ok(Args {
@@ -149,7 +150,7 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             ..Args::default()
         });
     }
-    if !matches!(command.as_str(), "inspect" | "convert" | "plan") {
+    if !matches!(command.as_str(), "inspect" | "convert") {
         return Err(usage(format!("unknown command {command:?}; use --help")));
     }
     // A command name alone requests its help, like the bare executable.
@@ -189,6 +190,8 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
         // non-options are collected as OS-native paths.
         if options && (arg == "--json" || arg == "-j") {
             set_flag(&mut args.json, "--json")?;
+        } else if options && arg == "--preview" {
+            set_flag(&mut args.preview, "--preview")?;
         } else if options && (arg == "--strict" || arg == "-s") {
             set_flag(&mut args.strict, "--strict")?;
         } else if options && arg == "--overwrite" {
@@ -310,8 +313,14 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
     if args.strict && args.command != "inspect" {
         return Err(usage("--strict is only for inspect"));
     }
+    if args.preview && args.command != "convert" {
+        return Err(usage("--preview is only for convert"));
+    }
     if args.overwrite && args.command != "convert" {
         return Err(usage("--overwrite is only for convert"));
+    }
+    if args.preview && args.overwrite {
+        return Err(usage("--overwrite cannot be combined with --preview"));
     }
     if (args.accept_omissions
         || args.accept_basic_frame
@@ -321,6 +330,15 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
         && args.command != "convert"
     {
         return Err(usage("conversion acceptance flags are only for convert"));
+    }
+    if args.preview
+        && (args.accept_omissions
+            || args.accept_basic_frame
+            || args.accept_zero_rotations
+            || args.accept_synthetic_zero
+            || args.accept_all)
+    {
+        return Err(usage("acceptance flags cannot be combined with --preview"));
     }
     let op2_output = is_op2_output(&args);
     if args.mesh_out.is_some() && !op2_output {
@@ -345,7 +363,7 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
         ));
     }
     if args.msh_version.is_some() {
-        let msh_target = matches!(args.command.as_str(), "convert" | "plan")
+        let msh_target = args.command == "convert"
             && Format::from_output_path(&args.paths[1]).is_ok_and(|format| format == Format::Msh);
         let msh_companion = args.mesh_out.as_deref().is_some_and(|path| {
             Format::from_output_path(path).is_ok_and(|format| format == Format::Msh)
@@ -359,8 +377,8 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             "--infill-shape and --infill-unit-size must be used together",
         ));
     }
-    if args.infill_shape.is_some() && !matches!(args.command.as_str(), "convert" | "plan") {
-        return Err(usage("--infill-shape applies only to convert or plan"));
+    if args.infill_shape.is_some() && args.command != "convert" {
+        return Err(usage("--infill-shape applies only to convert"));
     }
     if args.infill_shape.is_some() && args.surface {
         return Err(usage("--infill-shape cannot be combined with --surface"));
@@ -372,14 +390,14 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
     {
         return Err(usage("--gmsh applies only to tet4 infill"));
     }
-    if args.surface && !matches!(args.command.as_str(), "convert" | "plan") {
-        return Err(usage("--surface applies only to convert or plan"));
+    if args.surface && args.command != "convert" {
+        return Err(usage("--surface applies only to convert"));
     }
     if args.gmsh.is_some() && args.infill_shape != Some(InfillShape::Tet4) {
         return Err(usage("--gmsh requires --infill-shape tet4"));
     }
-    if args.match_grid.is_some() && !matches!(args.command.as_str(), "convert" | "plan") {
-        return Err(usage("--match-grid applies only to convert or plan"));
+    if args.match_grid.is_some() && args.command != "convert" {
+        return Err(usage("--match-grid applies only to convert"));
     }
     if args.match_grid.is_some()
         && (args.infill_shape.is_some() || args.surface || args.gmsh.is_some())
@@ -389,7 +407,7 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
         ));
     }
     if args.smooth_iterations.is_some()
-        && (!matches!(args.command.as_str(), "convert" | "plan")
+        && (args.command != "convert"
             || Format::from_output_path(&args.paths[1]).ok() != Some(Format::Stl))
     {
         return Err(usage("--smooth-iterations applies only to STL output"));
@@ -419,6 +437,7 @@ mod tests {
         assert!(args(&["inspect", "x.bdf", "--json", "--json"]).is_err());
         assert!(args(&["inspect", "x.bdf", "--json", "-j"]).is_err());
         assert!(args(&["inspect", "x.bdf", "--strict", "-s"]).is_err());
+        assert!(args(&["convert", "x.bdf", "y.vtu", "--preview", "--preview"]).is_err());
         assert!(args(&["convert", "x.vtu", "y.vtu", "--surface", "--surface"]).is_err());
     }
 

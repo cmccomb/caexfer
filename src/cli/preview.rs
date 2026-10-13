@@ -20,7 +20,7 @@ fn present_preview(args: &Args, report: &PreviewReport) -> Result<()> {
     if args.json {
         let mut fields = vec![
             ("schema_version", "1".into()),
-            ("operation", quote("conversion-plan")),
+            ("operation", quote("conversion-preview")),
             ("scope", quote("input-to-output-route")),
             ("input", path_json(&args.paths[0])),
             ("output", path_json(&args.paths[1])),
@@ -83,7 +83,7 @@ fn present_preview(args: &Args, report: &PreviewReport) -> Result<()> {
         emit(&object(fields))?;
     } else {
         emit(&format!(
-            "Conversion plan {} → {}: {} → {}; source has {} bytes, {} points, {} cells, {} fields.",
+            "Conversion preview {} → {}: {} → {}; source has {} bytes, {} points, {} cells, {} fields.",
             args.paths[0].display(),
             args.paths[1].display(),
             report.source_format.name(),
