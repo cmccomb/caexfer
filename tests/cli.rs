@@ -144,6 +144,7 @@ fn geometry_conversion_creates_vtu_and_reports_losses() {
 
 /// Exercise the public CLI's volume-to-surface-to-volume mesh route.
 #[test]
+#[allow(clippy::too_many_lines)] // One closed shell exercises all infill routes.
 fn surface_and_volume_mesh_flags_convert_closed_geometry() {
     let s = Scratch::new();
     std::fs::write(
@@ -170,7 +171,9 @@ fn surface_and_volume_mesh_flags_convert_closed_geometry() {
         "convert",
         "shell.vtu",
         "rebuilt.vtu",
-        "--voxel-size",
+        "--infill-shape",
+        "hex8",
+        "--infill-unit-size",
         "0.5",
         "--accept-omissions",
         "--json",
@@ -215,7 +218,10 @@ fn surface_and_volume_mesh_flags_convert_closed_geometry() {
         "convert",
         "shell.vtu",
         "missing-tets.vtu",
-        "--tetrahedralize",
+        "--infill-shape",
+        "tet4",
+        "--infill-unit-size",
+        "0.5",
         "--gmsh",
         "/caexfer/nonexistent/gmsh",
         "--accept-omissions",

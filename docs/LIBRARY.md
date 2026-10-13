@@ -78,11 +78,8 @@ override parsing, coordinate-system, representability, or I/O errors.
 | `assume_basic_frame` | Accept basic-frame coordinates and displacements for conversion with a non-BDF companion |
 | `subcase`, `step` | Select an OP2/PCH result; `step` also selects an FRD or Exodus step |
 | `msh_version` | Select MSH 2.2 output; default is 4.1 |
-| `voxel_size` | Positive cubic cell size for mesh to VTI/VOX or a closed surface mesh to a Hex8 volume mesh |
-| `infill_shape`, `infill_unit_size` | Paired closed-surface volume meshing options: `InfillShape::{Tet4, Hex8, Wedge6, Pyramid5}` and a positive size in source units. Tet4 uses Gmsh; the others split occupied cubes on a size-spaced grid. |
+| `infill_shape`, `infill_unit_size` | Paired meshing options: `InfillShape::{Tet4, Hex8, Wedge6, Pyramid5}` and a positive size in source units. Tet4 uses Gmsh; the others split occupied cubes on a size-spaced grid. Mesh-to-VTI/VOX requires `Hex8`. |
 | `surface` | Extract external triangles from a volume mesh before writing a mesh format |
-| `tetrahedralize` | Generate a surface-conforming Tet4 volume with Gmsh from a closed surface |
-| `tet_size` | Optional positive target edge size for tetrahedralization |
 | `gmsh` | Optional path to the Gmsh executable; default is `gmsh` on `PATH` |
 | `max_bytes` | Bound the input and companion mesh reads; default is 256 MiB |
 | `zero_missing_rotations` | Accept float zero for missing OP2 R1/R2/R3 components |

@@ -90,25 +90,51 @@ fn convert_inner(
         || options
             .infill_unit_size
             .is_some_and(|size| !size.is_finite() || size <= 0.0)
-        || (options.infill_shape.is_some()
-            && (options.surface
-                || options.voxel_size.is_some()
-                || options.tetrahedralize
-                || options.tet_size.is_some()))
+        || (options.infill_shape.is_some() && options.surface)
     {
         return Err(Error::new(
             "E_USAGE",
             "infill requires a shape and positive unit size and cannot use another geometry projection",
         ));
     }
-    let tetrahedralize = options.tetrahedralize || options.infill_shape == Some(InfillShape::Tet4);
+    let tetrahedralize = options.infill_shape == Some(InfillShape::Tet4);
+    let voxel_target = matches!(target, Format::Vti | Format::Vox);
     let grid_infill = match options.infill_shape {
         Some(InfillShape::Hex8) => Some(CellKind::Hex8),
         Some(InfillShape::Wedge6) => Some(CellKind::Wedge6),
         Some(InfillShape::Pyramid5) => Some(CellKind::Pyramid5),
         _ => None,
     };
+    if options.infill_shape.is_some() && source.voxel_grid.is_some() {
+        return Err(Error::new("E_USAGE", "infill options require mesh input"));
+    }
+    if voxel_target
+        && options
+            .infill_shape
+            .is_some_and(|shape| shape != InfillShape::Hex8)
+    {
+        return Err(Error::new("E_USAGE", "VTI/VOX output requires hex8 infill"));
+    }
     if grid_infill.is_some()
+        && !voxel_target
+        && (matches!(target, Format::Stl | Format::Op2 | Format::Pch)
+            || source.dataset.mesh.cells.is_empty()
+            || source
+                .dataset
+                .mesh
+                .cells
+                .iter()
+                .any(|cell| cell.kind.dimension() != 2))
+    {
+        return Err(Error::new(
+            "E_USAGE",
+            "grid infill requires a closed surface mesh and a volume-mesh output",
+        ));
+    }
+    if options.gmsh.is_some() && !tetrahedralize {
+        return Err(Error::new("E_USAGE", "gmsh requires tet4 infill"));
+    }
+    if tetrahedralize
         && (source.voxel_grid.is_some()
             || matches!(
                 target,
@@ -124,72 +150,23 @@ fn convert_inner(
     {
         return Err(Error::new(
             "E_USAGE",
-            "grid infill requires a closed surface mesh and a volume-mesh output",
-        ));
-    }
-    if options
-        .tet_size
-        .is_some_and(|size| !size.is_finite() || size <= 0.0)
-        || ((options.tet_size.is_some() || options.gmsh.is_some()) && !tetrahedralize)
-    {
-        return Err(Error::new(
-            "E_USAGE",
-            "tet_size requires tetrahedralize; gmsh requires tetrahedralize or tet4 infill",
-        ));
-    }
-    if tetrahedralize
-        && (options.surface
-            || options.voxel_size.is_some()
-            || source.voxel_grid.is_some()
-            || matches!(
-                target,
-                Format::Vti | Format::Vox | Format::Stl | Format::Op2 | Format::Pch
-            )
-            || source.dataset.mesh.cells.is_empty()
-            || source
-                .dataset
-                .mesh
-                .cells
-                .iter()
-                .any(|cell| cell.kind.dimension() != 2))
-    {
-        return Err(Error::new(
-            "E_USAGE",
-            "tetrahedralize requires a closed surface mesh, a mesh output, and no other geometry projection",
-        ));
-    }
-    let voxel_size_allowed = source.voxel_grid.is_none()
-        && (matches!(target, Format::Vti | Format::Vox)
-            || (!matches!(target, Format::Stl | Format::Op2 | Format::Pch)
-                && !source.dataset.mesh.cells.is_empty()
-                && source
-                    .dataset
-                    .mesh
-                    .cells
-                    .iter()
-                    .all(|cell| cell.kind.dimension() == 2)));
-    if options.voxel_size.is_some() && !voxel_size_allowed {
-        return Err(Error::new(
-            "E_USAGE",
-            "--voxel-size applies to mesh to VTI/VOX or closed surface to a volume mesh",
+            "tet4 infill requires a closed surface mesh and a mesh output",
         ));
     }
     if options.surface
-        && (options.voxel_size.is_some()
-            || matches!(
-                target,
-                Format::Vti | Format::Vox | Format::Op2 | Format::Pch
-            )
-            || !source
-                .dataset
-                .mesh
-                .cells
-                .iter()
-                .any(|cell| cell.kind.dimension() == 3))
+        && (matches!(
+            target,
+            Format::Vti | Format::Vox | Format::Op2 | Format::Pch
+        ) || !source
+            .dataset
+            .mesh
+            .cells
+            .iter()
+            .any(|cell| cell.kind.dimension() == 3))
     {
         return Err(Error::new(
             "E_USAGE",
-            "--surface requires volume input and a mesh output; it cannot use --voxel-size",
+            "--surface requires volume input and a mesh output",
         ));
     }
     if options.smooth_iterations > 50
@@ -266,11 +243,7 @@ fn convert_inner(
         let node_sets = source.dataset.mesh.node_sets.len();
         let cell_sets = source.dataset.mesh.cell_sets.len();
         let triangles = boundary_surface(&source.dataset.mesh)?;
-        source.dataset = tetra::tetrahedralize(
-            &triangles,
-            options,
-            options.infill_unit_size.or(options.tet_size),
-        )?;
+        source.dataset = tetra::tetrahedralize(&triangles, options, options.infill_unit_size)?;
         compact_mesh_points(&mut source.dataset);
         source.omissions.push(Omission::new(
             Stage::Destination,
@@ -359,7 +332,7 @@ fn convert_inner(
             if volume { format!("external volume faces triangulated for STL; {lower} lower-dimensional cell(s) excluded") }
             else { "quadrilateral faces triangulated for STL".to_owned() }));
     } else if !options.surface
-        && (options.voxel_size.is_some() || grid_infill.is_some())
+        && grid_infill.is_some()
         && !matches!(target, Format::Stl | Format::Vti | Format::Vox)
     {
         let fields = source.dataset.fields.len();
@@ -376,7 +349,6 @@ fn convert_inner(
             &source.dataset.mesh,
             options
                 .infill_unit_size
-                .or(options.voxel_size)
                 .ok_or_else(|| Error::new("E_USAGE", "missing infill unit size"))?,
         )?;
         let kind = grid_infill.unwrap_or(CellKind::Hex8);
@@ -435,16 +407,16 @@ fn convert_inner(
     match target {
         Format::Vti | Format::Vox => {
             let grid = if let Some(grid) = &source.voxel_grid {
-                if options.voxel_size.is_some() {
-                    return Err(Error::new(
-                        "E_USAGE",
-                        "--voxel-size applies only to mesh or surface input",
-                    ));
+                if options.infill_shape.is_some() {
+                    return Err(Error::new("E_USAGE", "infill options require mesh input"));
                 }
                 grid.clone()
             } else {
-                let spacing = options.voxel_size.ok_or_else(|| {
-                    Error::new("E_USAGE", "mesh to voxel conversion requires --voxel-size")
+                let spacing = options.infill_unit_size.ok_or_else(|| {
+                    Error::new(
+                        "E_USAGE",
+                        "mesh to VTI/VOX requires --infill-shape hex8 and --infill-unit-size",
+                    )
                 })?;
                 omissions.push(Omission::new(Stage::Destination,
                     "closed surface sampled at voxel centers; features below grid spacing may disappear"));

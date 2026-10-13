@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use caexfer::{Options, convert, validate};
+use caexfer::{InfillShape, Options, convert, validate};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -144,7 +144,7 @@ fn vox_rejects_corrupt_geometry_through_public_api() {
 }
 
 #[test]
-fn voxel_size_requires_a_mesh_source_and_explicit_size() {
+fn infill_requires_a_mesh_source_and_explicit_size() {
     let scratch = Scratch::new();
     let source = grid_input(&scratch);
     let vti_output = scratch.path("copy.vti");
@@ -152,7 +152,8 @@ fn voxel_size_requires_a_mesh_source_and_explicit_size() {
         &source,
         &vti_output,
         &Options {
-            voxel_size: Some(1.0),
+            infill_shape: Some(InfillShape::Hex8),
+            infill_unit_size: Some(1.0),
             accept_all: true,
             ..Options::default()
         },
@@ -192,7 +193,8 @@ fn stl_to_volume_and_bdf_to_occupancy_round_trip() {
         &stl,
         &filled,
         &Options {
-            voxel_size: Some(0.5),
+            infill_shape: Some(InfillShape::Hex8),
+            infill_unit_size: Some(0.5),
             accept_all: true,
             ..Options::default()
         },
@@ -221,7 +223,8 @@ fn stl_to_volume_and_bdf_to_occupancy_round_trip() {
         &bdf,
         &raster,
         &Options {
-            voxel_size: Some(0.5),
+            infill_shape: Some(InfillShape::Hex8),
+            infill_unit_size: Some(0.5),
             accept_all: true,
             ..Options::default()
         },

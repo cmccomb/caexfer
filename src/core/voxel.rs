@@ -431,7 +431,7 @@ impl VoxelGrid {
         {
             return Err(Error::new(
                 "E_VOXEL",
-                "voxel sampling exceeds 100 million triangle checks; increase --voxel-size or simplify the surface",
+                "voxel sampling exceeds 100 million triangle checks; increase --infill-unit-size or simplify the surface",
             ));
         }
         let mut grid = Self {
@@ -494,7 +494,7 @@ impl VoxelGrid {
         if grid.occupied.iter().all(|&value| value == 0) {
             return Err(Error::new(
                 "E_VOXEL",
-                "no voxel centers fall inside the surface; reduce --voxel-size",
+                "no voxel centers fall inside the surface; reduce --infill-unit-size",
             ));
         }
         Ok(grid)

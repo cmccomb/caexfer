@@ -4,7 +4,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::conversion::{self, Format, Options, ReadResult, Stage};
+use crate::conversion::{self, Format, InfillShape, Options, ReadResult, Stage};
 use crate::core::{CellSet, Field, FieldLocation, NodeSet};
 
 static NEXT_SCRATCH: AtomicU64 = AtomicU64::new(0);
@@ -279,7 +279,8 @@ fn voxel_formats_bridge_surface_and_volume_meshes() {
     let stl_path = scratch.write("blocks.stl", stl);
     let mut vti = Vec::new();
     let options = Options {
-        voxel_size: Some(1.0),
+        infill_shape: Some(InfillShape::Hex8),
+        infill_unit_size: Some(1.0),
         ..Options::default()
     };
     let report = conversion::convert(
@@ -428,7 +429,8 @@ fn volume_and_stl_voxel_routes_report_geometry_and_field_losses() {
         assumed_zero: false,
     };
     let options = Options {
-        voxel_size: Some(0.5),
+        infill_shape: Some(InfillShape::Hex8),
+        infill_unit_size: Some(0.5),
         ..Options::default()
     };
     let mut vti = Vec::new();
@@ -606,7 +608,8 @@ fn mesh_surface_and_volume_routes_preserve_only_mappable_fields() {
         },
         Format::Vtu,
         &Options {
-            voxel_size: Some(1.0),
+            infill_shape: Some(InfillShape::Hex8),
+            infill_unit_size: Some(1.0),
             ..Options::default()
         },
         &mut volume_bytes,
