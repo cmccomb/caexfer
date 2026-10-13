@@ -132,7 +132,11 @@ fn read_mesh(path: &Path, max_bytes: usize) -> Result<Dataset> {
 }
 
 /// Generate a Tet4 volume whose boundary follows the imported surface geometry.
-pub(super) fn tetrahedralize(surface: &Mesh, options: &Options) -> Result<Dataset> {
+pub(super) fn tetrahedralize(
+    surface: &Mesh,
+    options: &Options,
+    size: Option<f64>,
+) -> Result<Dataset> {
     require_closed_surface(surface)?;
     let work = WorkDir::new()?;
     stl::write_data(
@@ -142,7 +146,7 @@ pub(super) fn tetrahedralize(surface: &Mesh, options: &Options) -> Result<Datase
         },
         File::create(work.0.join("surface.stl"))?,
     )?;
-    fs::write(work.0.join("mesh.geo"), script(options.tet_size))?;
+    fs::write(work.0.join("mesh.geo"), script(size))?;
     let gmsh = options.gmsh.as_deref().unwrap_or_else(|| Path::new("gmsh"));
     let executable =
         if gmsh.is_relative() && gmsh.parent().is_some_and(|parent| parent != Path::new("")) {

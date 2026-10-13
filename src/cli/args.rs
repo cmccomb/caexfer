@@ -3,7 +3,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-use caexfer::{Error, Format, MshVersion, Result};
+use caexfer::{Error, Format, InfillShape, MshVersion, Result};
 
 /// Parsed CLI command, paths, and explicitly supplied option flags.
 #[derive(Debug, Default)]
@@ -28,6 +28,8 @@ pub(super) struct Args {
     pub(super) max_bytes: Option<usize>,
     pub(super) msh_version: Option<MshVersion>,
     pub(super) voxel_size: Option<f64>,
+    pub(super) infill_shape: Option<InfillShape>,
+    pub(super) infill_unit_size: Option<f64>,
     pub(super) surface: bool,
     pub(super) tetrahedralize: bool,
     pub(super) tet_size: Option<f64>,
@@ -239,6 +241,24 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
                 Ok(size)
             })?;
             index += 1;
+        } else if options && arg == "--infill-shape" {
+            set_option(&mut args.infill_shape, "--infill-shape", || {
+                InfillShape::parse(value(1)?)
+            })?;
+            index += 1;
+        } else if options && arg == "--infill-unit-size" {
+            set_option(&mut args.infill_unit_size, "--infill-unit-size", || {
+                let size: f64 = value(1)?
+                    .parse()
+                    .map_err(|_| usage("--infill-unit-size requires a positive finite number"))?;
+                if !size.is_finite() || size <= 0.0 {
+                    return Err(usage(
+                        "--infill-unit-size requires a positive finite number",
+                    ));
+                }
+                Ok(size)
+            })?;
+            index += 1;
         } else if options && arg == "--surface" {
             set_flag(&mut args.surface, "--surface")?;
         } else if options && arg == "--tetrahedralize" {
@@ -358,6 +378,31 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
     if args.voxel_size.is_some() && args.command != "convert" {
         return Err(usage("--voxel-size applies only to convert"));
     }
+    if args.infill_shape.is_some() != args.infill_unit_size.is_some() {
+        return Err(usage(
+            "--infill-shape and --infill-unit-size must be used together",
+        ));
+    }
+    if args.infill_shape.is_some() && args.command != "convert" {
+        return Err(usage("--infill-shape applies only to convert"));
+    }
+    if args.infill_shape.is_some()
+        && (args.surface
+            || args.voxel_size.is_some()
+            || args.tetrahedralize
+            || args.tet_size.is_some())
+    {
+        return Err(usage(
+            "--infill-shape cannot be combined with --surface, --voxel-size, --tetrahedralize, or --tet-size",
+        ));
+    }
+    if args.gmsh.is_some()
+        && args
+            .infill_shape
+            .is_some_and(|shape| shape != InfillShape::Tet4)
+    {
+        return Err(usage("--gmsh applies only to tet4 infill"));
+    }
     if args.surface && args.command != "convert" {
         return Err(usage("--surface applies only to convert"));
     }
@@ -372,8 +417,13 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
     if args.tetrahedralize && args.command != "convert" {
         return Err(usage("--tetrahedralize applies only to convert"));
     }
-    if (args.tet_size.is_some() || args.gmsh.is_some()) && !args.tetrahedralize {
-        return Err(usage("--tet-size and --gmsh require --tetrahedralize"));
+    if (args.tet_size.is_some() || args.gmsh.is_some())
+        && !args.tetrahedralize
+        && args.infill_shape != Some(InfillShape::Tet4)
+    {
+        return Err(usage(
+            "--tet-size and --gmsh require --tetrahedralize; --gmsh also accepts tet4 infill",
+        ));
     }
     if args.smooth_iterations.is_some()
         && (args.command != "convert"
@@ -442,6 +492,66 @@ mod tests {
                 "0"
             ])
             .is_err()
+        );
+    }
+
+    #[test]
+    fn infill_shape_and_size_are_paired_and_exclusive() {
+        for shape in ["tet4", "hex8", "wedge6", "pyramid5"] {
+            let parsed = args(&[
+                "convert",
+                "x.stl",
+                "y.vtu",
+                "--infill-shape",
+                shape,
+                "--infill-unit-size",
+                "0.5",
+            ])
+            .unwrap();
+            assert!(parsed.infill_shape.is_some());
+            assert_eq!(parsed.infill_unit_size, Some(0.5));
+        }
+        assert!(args(&["convert", "x.stl", "y.vtu", "--infill-shape", "hex8"]).is_err());
+        assert!(args(&["convert", "x.stl", "y.vtu", "--infill-unit-size", "1"]).is_err());
+        assert!(
+            args(&[
+                "convert",
+                "x.stl",
+                "y.vtu",
+                "--infill-shape",
+                "hex8",
+                "--infill-unit-size",
+                "0"
+            ])
+            .is_err()
+        );
+        assert!(
+            args(&[
+                "convert",
+                "x.stl",
+                "y.vtu",
+                "--infill-shape",
+                "hex8",
+                "--infill-unit-size",
+                "1",
+                "--gmsh",
+                "gmsh"
+            ])
+            .is_err()
+        );
+        assert!(
+            args(&[
+                "convert",
+                "x.stl",
+                "y.vtu",
+                "--infill-shape",
+                "tet4",
+                "--infill-unit-size",
+                "1",
+                "--gmsh",
+                "gmsh"
+            ])
+            .is_ok()
         );
     }
 

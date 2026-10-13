@@ -40,6 +40,8 @@ pub(super) fn conversion_options(args: &Args) -> Result<Options> {
         max_bytes: args.max_bytes.unwrap_or(Options::default().max_bytes),
         msh_version: args.msh_version,
         voxel_size: args.voxel_size,
+        infill_shape: args.infill_shape,
+        infill_unit_size: args.infill_unit_size,
         surface: args.surface,
         tetrahedralize: args.tetrahedralize,
         tet_size: args.tet_size,

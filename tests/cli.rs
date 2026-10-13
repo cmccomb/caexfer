@@ -188,6 +188,29 @@ fn surface_and_volume_mesh_flags_convert_closed_geometry() {
             .contains("\"cells\":8")
     );
 
+    for (shape, cells) in [("hex8", 8), ("wedge6", 16), ("pyramid5", 48)] {
+        let name = format!("{shape}.vtu");
+        let output = s.run(&[
+            "convert",
+            "shell.vtu",
+            &name,
+            "--infill-shape",
+            shape,
+            "--infill-unit-size",
+            "0.5",
+            "--accept-omissions",
+            "--json",
+        ]);
+        assert!(
+            output.status.success(),
+            "{shape}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report = String::from_utf8(output.stdout).unwrap();
+        assert!(report.contains(&format!("\"cells\":{cells}")), "{report}");
+        assert!(s.run(&["validate", &name]).status.success());
+    }
+
     let missing_mesher = s.run(&[
         "convert",
         "shell.vtu",
@@ -205,8 +228,9 @@ fn surface_and_volume_mesh_flags_convert_closed_geometry() {
             "convert",
             "shell.vtu",
             "tets.vtu",
-            "--tetrahedralize",
-            "--tet-size",
+            "--infill-shape",
+            "tet4",
+            "--infill-unit-size",
             "0.5",
             "--gmsh",
             &gmsh,

@@ -94,8 +94,15 @@ with `--voxel-size`. Voxel input becomes shared-corner Hex8 volume cells in
 mesh formats or exposed, triangulated faces in STL. A volume mesh can become a
 triangle surface mesh with `--surface`. Any closed triangle or quad surface
 mesh can become a voxelized Hex8 volume mesh with `--voxel-size`. For a
-surface-conforming Tet4 volume mesh, use `--tetrahedralize` with Gmsh on
+surface-conforming Tet4 volume mesh, use `--infill-shape tet4` with Gmsh on
 `PATH` or pass `--gmsh /path/to/gmsh` (tested with Gmsh 4.15.2):
+
+`--infill-shape tet4|hex8|wedge6|pyramid5` and `--infill-unit-size N`
+provide one interface for volume meshing. Tet4 follows the input surface.
+Hex8, Wedge6, and Pyramid5 sample occupancy on a cubic grid of edge length
+`N`; each occupied cube yields one hex, two wedges, or six pyramids. All
+three grid shapes have the same stepped exterior at a given size. The older
+`--tetrahedralize --tet-size` and `--voxel-size` routes remain available.
 
 ```sh
 caexfer convert closed.stl solid.vti --voxel-size 0.5 --accept-omissions
@@ -105,7 +112,9 @@ caexfer convert solid.vti smooth-shell.stl --smooth-iterations 10 --accept-omiss
 caexfer convert closed.stl volume.vtu --voxel-size 0.5 --accept-omissions
 caexfer convert volume.vtu shell.vtu --surface --accept-omissions
 caexfer convert shell.vtu rebuilt-volume.vtu --voxel-size 0.5 --accept-omissions
-caexfer convert shell.vtu tets.vtu --tetrahedralize --tet-size 0.5 --accept-omissions
+caexfer convert shell.vtu tets.vtu --infill-shape tet4 --infill-unit-size 0.5 --accept-omissions
+caexfer convert shell.vtu wedges.vtu --infill-shape wedge6 --infill-unit-size 0.5 --accept-omissions
+caexfer convert shell.vtu pyramids.vtu --infill-shape pyramid5 --infill-unit-size 0.5 --accept-omissions
 ```
 
 Surface extraction keeps source point values and discards cell values, sets,

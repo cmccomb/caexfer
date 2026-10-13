@@ -61,11 +61,13 @@ INPUT OPTIONS
 
 DESTINATION OPTIONS
   --msh-version 2.2|4.1      MSH output dialect (default: 4.1)
+  --infill-shape SHAPE       Closed-surface volume cells: tet4|hex8|wedge6|pyramid5
+  --infill-unit-size N       Positive target edge/grid size; required with --infill-shape
   --voxel-size N             Cubic cell size for mesh to VTI/VOX, or closed surface to Hex8 mesh
   --surface                  Extract external triangles from a volume mesh
   --tetrahedralize           Mesh a closed surface into conforming Tet4 cells (requires Gmsh)
   --tet-size N               Target edge size for --tetrahedralize (Gmsh default if omitted)
-  --gmsh FILE                Gmsh executable for --tetrahedralize (default: gmsh on PATH)
+  --gmsh FILE                Gmsh executable for tet4 infill (default: gmsh on PATH)
   --smooth-iterations N      Smooth VTI/VOX to STL surface (1-50 cycles; default: off)
   --mesh-out FILE            Write a companion mesh alongside OP2 output
   --overwrite                Replace existing regular output files
@@ -96,6 +98,7 @@ EXAMPLES
   caexfer convert volume.vtu shell.vtu --surface --accept-omissions
   caexfer convert shell.vtu volume.vtu --voxel-size 0.5 --accept-omissions
   caexfer convert shell.vtu tets.vtu --tetrahedralize --tet-size 0.5 --accept-omissions
+  caexfer convert shell.vtu wedges.vtu --infill-shape wedge6 --infill-unit-size 0.5 --accept-omissions
 ";
 
 /// Return the help for the selected command; parsing ensures it is recognized.
