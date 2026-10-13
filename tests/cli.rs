@@ -50,6 +50,7 @@ fn help_and_version_work() {
     assert!(overview.contains("caexfer COMMAND [OPTIONS]"));
     assert!(overview.contains("caexfer COMMAND --help"));
     assert!(overview.contains("-f, --formats"));
+    assert!(overview.contains("  preview "));
     assert!(!overview.contains("  formats   "));
     assert!(!overview.contains("  info      "));
     assert_eq!(s.run(&["info", "mesh.bdf"]).status.code(), Some(2));
@@ -61,6 +62,7 @@ fn help_and_version_work() {
     assert!(convert.contains("--accept-omissions"));
     assert!(convert.contains("--accept-all"));
     assert!(convert.contains("--overwrite"));
+    assert!(!convert.contains("--preview"));
     assert!(convert.contains("-j, --json"));
     assert!(!convert.contains("Treat following arguments as paths"));
     assert!(convert.contains("--mesh-out FILE"));
@@ -86,6 +88,35 @@ fn help_and_version_work() {
     assert_eq!(validate, String::from_utf8(bare_validate.stdout).unwrap());
     assert_eq!(bare_validate.stderr, b"");
     assert_eq!(s.run(&["convert", "mesh.bdf"]).status.code(), Some(2));
+    let preview = s.run(&["preview", "--help"]);
+    assert!(preview.status.success());
+    let preview = String::from_utf8(preview.stdout).unwrap();
+    assert!(preview.contains("preview INPUT OUTPUT [OPTIONS]"));
+    assert!(preview.contains("--match-grid FILE"));
+    assert!(!preview.contains("--overwrite"));
+    assert!(!preview.contains("--accept-omissions"));
+    assert_eq!(
+        preview,
+        String::from_utf8(s.run(&["help", "preview"]).stdout).unwrap()
+    );
+    assert_eq!(
+        s.run(&["convert", "mesh.bdf", "mesh.vtu", "--preview"])
+            .status
+            .code(),
+        Some(2)
+    );
+    assert_eq!(
+        s.run(&["preview", "mesh.bdf", "mesh.vtu", "--overwrite"])
+            .status
+            .code(),
+        Some(2)
+    );
+    assert_eq!(
+        s.run(&["preview", "mesh.bdf", "mesh.vtu", "--accept-all"])
+            .status
+            .code(),
+        Some(2)
+    );
     assert_eq!(s.run(&["validate", "--strict"]).status.code(), Some(2));
 
     assert_eq!(

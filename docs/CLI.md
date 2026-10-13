@@ -58,7 +58,7 @@ before or after options; use `--` for paths beginning with a hyphen. Filenames
 use OS-native strings internally; JSON/human display of non-UTF-8 paths is
 lossy, not an exact path serialization.
 
-`-j` abbreviates `--json` for both commands; `-s` abbreviates `--strict` for
+`-j` abbreviates `--json` for all commands; `-s` abbreviates `--strict` for
 validation.
 
 | Command or option | Result |
