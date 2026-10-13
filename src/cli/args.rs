@@ -15,6 +15,7 @@ pub(super) struct Args {
     pub(super) json: bool,
     pub(super) strict: bool,
     pub(super) overwrite: bool,
+    pub(super) preview: bool,
     pub(super) accept_omissions: bool,
     pub(super) accept_basic_frame: bool,
     pub(super) accept_zero_rotations: bool,
@@ -28,6 +29,7 @@ pub(super) struct Args {
     pub(super) max_bytes: Option<usize>,
     pub(super) msh_version: Option<MshVersion>,
     pub(super) voxel_size: Option<f64>,
+    pub(super) match_grid: Option<PathBuf>,
     pub(super) smooth_iterations: Option<usize>,
 }
 
@@ -189,6 +191,8 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             set_flag(&mut args.strict, "--strict")?;
         } else if options && arg == "--overwrite" {
             set_flag(&mut args.overwrite, "--overwrite")?;
+        } else if options && arg == "--preview" {
+            set_flag(&mut args.preview, "--preview")?;
         } else if options && arg == "--accept-omissions" {
             set_flag(&mut args.accept_omissions, "--accept-omissions")?;
         } else if options && arg == "--accept-basic-frame" {
@@ -233,6 +237,11 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
                     return Err(usage("--voxel-size requires a positive finite number"));
                 }
                 Ok(size)
+            })?;
+            index += 1;
+        } else if options && arg == "--match-grid" {
+            set_option(&mut args.match_grid, "--match-grid", || {
+                Ok(PathBuf::from(value(1)?))
             })?;
             index += 1;
         } else if options && arg == "--smooth-iterations" {
@@ -292,6 +301,9 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
     if args.overwrite && args.command != "convert" {
         return Err(usage("--overwrite is only for convert"));
     }
+    if args.preview && args.command != "convert" {
+        return Err(usage("--preview is only for convert"));
+    }
     if (args.accept_omissions
         || args.accept_basic_frame
         || args.accept_zero_rotations
@@ -335,6 +347,12 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
     }
     if args.voxel_size.is_some() && args.command != "convert" {
         return Err(usage("--voxel-size applies only to convert"));
+    }
+    if args.match_grid.is_some() && args.command != "convert" {
+        return Err(usage("--match-grid applies only to convert"));
+    }
+    if args.match_grid.is_some() && args.voxel_size.is_some() {
+        return Err(usage("--match-grid supplies voxel size; omit --voxel-size"));
     }
     if args.smooth_iterations.is_some()
         && (args.command != "convert"

@@ -40,6 +40,7 @@ pub(super) fn conversion_options(args: &Args) -> Result<Options> {
         max_bytes: args.max_bytes.unwrap_or(Options::default().max_bytes),
         msh_version: args.msh_version,
         voxel_size: args.voxel_size,
+        match_grid: args.match_grid.clone(),
         smooth_iterations: args.smooth_iterations.unwrap_or(0),
         zero_missing_rotations: args.accept_zero_rotations,
         accept_omissions: args.accept_omissions || args.accept_all,

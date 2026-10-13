@@ -107,6 +107,41 @@ fn validation_json_has_version_and_counts() {
     assert!(out.contains("\"cells\":1"));
 }
 
+/// General previews project into a discard stream and leave no destination.
+#[test]
+fn conversion_preview_shows_exact_notices_without_writing() {
+    let s = Scratch::new();
+    let result = s.run(&["convert", "mesh.bdf", "mesh.vtu", "--preview", "--json"]);
+    assert!(result.status.success());
+    let output = String::from_utf8(result.stdout).unwrap();
+    assert!(output.contains("\"operation\":\"conversion-preview\""));
+    assert!(output.contains("\"complete\":true"));
+    assert!(output.contains("\"source_format\":\"bdf\""));
+    assert!(!s.0.join("mesh.vtu").exists());
+}
+
+/// Voxel previews report grid work before allocating or writing occupancy.
+#[test]
+fn voxel_preview_reports_dimensions_without_writing() {
+    let s = Scratch::new();
+    let input = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/donut.stl");
+    let result = s.run(&[
+        "convert",
+        input,
+        "donut.vti",
+        "--voxel-size",
+        "0.25",
+        "--preview",
+        "--json",
+    ]);
+    assert!(result.status.success());
+    let output = String::from_utf8(result.stdout).unwrap();
+    assert!(output.contains("\"complete\":false"));
+    assert!(output.contains("\"dimensions\":[26,26,7]"));
+    assert!(output.contains("\"cells\":4732"));
+    assert!(!s.0.join("donut.vti").exists());
+}
+
 /// Require projection acknowledgement before creating an output file.
 #[test]
 fn refused_conversion_does_not_create_output() {

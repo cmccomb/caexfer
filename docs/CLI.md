@@ -43,6 +43,8 @@ caexfer convert mesh.unv mesh.vtu
 caexfer convert results.exo results.vtu --step 0
 caexfer convert examples/donut.stl donut.vti --voxel-size 0.25 --accept-omissions
 caexfer convert donut.vti donut-roundtrip.stl --accept-omissions
+caexfer convert examples/donut.stl donut.vti --voxel-size 0.25 --preview
+caexfer convert other.stl aligned.vti --match-grid donut.vti --accept-omissions
 ```
 
 These commands use example input names. The [format limits](SUPPORT.md) describe
@@ -64,6 +66,7 @@ validation.
 | `-f`, `--formats` | Actual read/write capabilities, not a roadmap |
 | `validate INPUT` | Supported subset checks, projected counts, and source omissions |
 | `convert INPUT OUTPUT` | Project to a writable format; confirm each reported change before installation |
+| `convert INPUT OUTPUT --preview` | Read-only conversion plan with counts and notices; voxel routes show grid dimensions and sampling limits |
 
 Input extensions are `.bdf`, `.nas`, `.dat`, `.pch`, `.vtu`, `.vti`, `.vox`, `.vtk`, `.msh`, `.inp`,
 `.frd`, `.op2`, `.stl`, `.su2`, `.unv`, `.exo`, `.e`, and `.exodus`
@@ -80,6 +83,17 @@ without this option. `--smooth-iterations N` (1–50) applies only to VTI/VOX
 to STL and changes the surface away from exact voxel boundaries. Both routes
 report geometry, field, ID, and scale losses that require acceptance. VTI
 retains origin and spacing; VOX does not. See [format limits](SUPPORT.md).
+`--match-grid FILE` uses an existing supported VTI occupancy grid's origin,
+spacing, and dimensions for mesh voxelization. It supplies the voxel size;
+omit `--voxel-size`. The surface must fit completely inside the reference
+grid. Reference occupancy values are ignored. `--preview` creates no output.
+For ordinary conversions it performs the full projection into a discard
+stream, giving exact destination notices. For mesh voxelization it stops
+before occupancy allocation and sampling; it reports estimated dimensions,
+cell count, a conservative maximum triangle-check count, and any applicable
+cell, work, or VOX-axis limit. That estimate does not establish watertightness
+or exact destination losses. A nonzero `limit` in JSON means the requested
+voxelization cannot run at that resolution.
 
 `--mesh FILE` supplies geometry when reading OP2 or PCH. The companion must
 carry original node IDs that match the displacement table; generated one-based

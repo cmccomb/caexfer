@@ -62,9 +62,11 @@ INPUT OPTIONS
 DESTINATION OPTIONS
   --msh-version 2.2|4.1      MSH output dialect (default: 4.1)
   --voxel-size N             Cubic cell size for mesh/STL to VTI/VOX, or STL to volume mesh
+  --match-grid FILE          Sample on an existing VTI grid; supplies voxel size
   --smooth-iterations N      Smooth VTI/VOX to STL surface (1-50 cycles; default: off)
   --mesh-out FILE            Write a companion mesh alongside OP2 output
   --overwrite                Replace existing regular output files
+  --preview                  Inspect conversion and voxel work without writing output
 
 ACCEPTANCE OPTIONS
   --accept-omissions        Accept reported source and destination losses

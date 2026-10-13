@@ -9,6 +9,7 @@ The public library has two file operations:
 | --- | --- |
 | `caexfer::validate(input, &options)` | Supported-subset counts, source omissions, and a `passed` verdict |
 | `caexfer::convert(input, output, &options)` | A newly installed output file and a typed conversion report |
+| `caexfer::preview(input, output, &options)` | Read-only conversion plan; full dry projection except fast mesh voxel estimates |
 
 The `core`, `conversion`, and format adapter modules are implementation details.
 Both operations infer formats from filename extensions; set `Options.input_format`
@@ -95,6 +96,32 @@ Voxel grids carry occupancy, not interpolated solver values. Converting to VOX
 also omits physical origin and spacing; check `report.omissions` before using
 the output as geometry at a particular scale.
 
+`Options.match_grid` can name a supported VTI occupancy file. Its origin,
+spacing, and dimensions become the mesh voxelization grid; `voxel_size` must
+be omitted. The source surface must fit entirely within the reference bounds.
+The reference occupancy values are not copied. `preview` checks this geometry
+and estimates cell count and maximum sampling work without building occupancy:
+
+```rust
+use caexfer::{Options, Result, preview};
+
+fn main() -> Result<()> {
+    let plan = preview("examples/donut.stl", "donut.vti", &Options {
+        voxel_size: Some(0.25),
+        ..Options::default()
+    })?;
+    let grid = plan.voxel_estimate.expect("voxel plan");
+    println!("{} cells, up to {} triangle checks", grid.cells, grid.triangle_checks);
+    Ok(())
+}
+```
+
+For other conversion routes, preview runs the same writer into a discard
+stream and returns exact source and destination notices without installing a
+file. Voxel previews stop before ray sampling and return source notices only;
+`PreviewReport.complete` distinguishes these cases. Check
+`PreviewReport.limit` for resolution or VOX-axis limits.
+
 ## Options for special routes
 
 | Option | Purpose |
@@ -105,6 +132,7 @@ the output as geometry at a particular scale.
 | `subcase`, `step` | Select an OP2/PCH result; `step` also selects an FRD or Exodus step |
 | `msh_version` | Select MSH 2.2 output; default is 4.1 |
 | `voxel_size` | Positive cubic cell size for mesh/STL to VTI/VOX or STL to a Hex8 volume mesh |
+| `match_grid` | Existing VTI grid to supply origin, spacing, and dimensions for mesh voxelization |
 | `smooth_iterations` | Number of surface smoothing cycles (1–50) for VTI/VOX to STL; default 0 leaves voxel faces exact |
 | `max_bytes` | Bound the input and companion mesh reads; default is 256 MiB |
 | `zero_missing_rotations` | Accept float zero for missing OP2 R1/R2/R3 components |

@@ -28,6 +28,40 @@ pub struct VoxelGrid {
     pub occupied: Vec<u8>,
 }
 
+/// Planned grid geometry and the conservative sampling work bound.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VoxelEstimate {
+    /// Physical lower corner of cell zero.
+    pub origin: [f64; 3],
+    /// Cubic cell edge length.
+    pub spacing: f64,
+    /// Number of cells along each axis.
+    pub dims: [usize; 3],
+    /// Total planned cells before the occupancy allocation.
+    pub cells: u128,
+    /// Conservative upper bound for ray-triangle tests.
+    pub triangle_checks: u128,
+}
+
+impl VoxelEstimate {
+    /// Apply the current allocation and sampler limits after displaying a plan.
+    ///
+    /// # Errors
+    /// Returns `E_VOXEL` when the grid exceeds the cell or sampler work limit.
+    pub fn check_limits(&self) -> Result<()> {
+        if self.cells > 2_000_000 {
+            return Err(Error::new("E_VOXEL", "voxel grid exceeds 2,000,000 cells"));
+        }
+        if self.triangle_checks > 100_000_000 {
+            return Err(Error::new(
+                "E_VOXEL",
+                "voxel sampling exceeds 100 million triangle checks; increase --voxel-size or simplify the surface",
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Smooth a shared-vertex triangle surface with paired Laplacian steps.
 /// The negative pass offsets some of the shrinkage of ordinary Laplacian
 /// smoothing. Connectivity is unchanged, but geometric fidelity to the grid
@@ -88,6 +122,81 @@ pub(crate) fn smooth_surface(mesh: &mut Mesh, iterations: usize) -> Result<()> {
 }
 
 impl VoxelGrid {
+    /// Estimate a surface grid without allocating occupancy or casting rays.
+    pub fn estimate_surface(
+        mesh: &Mesh,
+        spacing: f64,
+        reference: Option<&Self>,
+    ) -> Result<VoxelEstimate> {
+        mesh.validate()?;
+        if !spacing.is_finite()
+            || spacing <= 0.0
+            || mesh.cells.is_empty()
+            || mesh
+                .cells
+                .iter()
+                .any(|c| !matches!(c.kind, CellKind::Triangle3 | CellKind::Quad4))
+        {
+            return Err(Error::new(
+                "E_VOXEL",
+                "voxelization needs positive spacing and a triangle/quad surface",
+            ));
+        }
+        let mut minimum = [f64::INFINITY; 3];
+        let mut maximum = [f64::NEG_INFINITY; 3];
+        for cell in &mesh.cells {
+            for &index in &cell.connectivity {
+                let position = mesh.points[index].position;
+                for axis in 0..3 {
+                    minimum[axis] = minimum[axis].min(position[axis]);
+                    maximum[axis] = maximum[axis].max(position[axis]);
+                }
+            }
+        }
+        let (origin, dims) = if let Some(grid) = reference {
+            grid.validate()?;
+            if grid.spacing.to_bits() != spacing.to_bits() {
+                return Err(Error::new(
+                    "E_VOXEL",
+                    "reference grid spacing differs from requested voxel size",
+                ));
+            }
+            for axis in 0..3 {
+                let end = (grid.dims[axis] as f64).mul_add(spacing, grid.origin[axis]);
+                if minimum[axis] < grid.origin[axis] || maximum[axis] > end {
+                    return Err(Error::new(
+                        "E_VOXEL",
+                        "surface extends outside reference grid bounds",
+                    ));
+                }
+            }
+            (grid.origin, grid.dims)
+        } else {
+            let mut dims = [0; 3];
+            for axis in 0..3 {
+                let n = ((maximum[axis] - minimum[axis]) / spacing).ceil();
+                if !n.is_finite() || n > 2_000_000.0 {
+                    return Err(Error::new("E_VOXEL", "voxel grid exceeds limit"));
+                }
+                dims[axis] = (n as usize).max(1);
+            }
+            (minimum, dims)
+        };
+        let cells = dims.iter().fold(1u128, |a, &b| a.saturating_mul(b as u128));
+        let triangles = mesh
+            .cells
+            .iter()
+            .map(|c| if c.kind == CellKind::Quad4 { 2 } else { 1 })
+            .sum::<usize>();
+        let triangle_checks = cells.saturating_mul(triangles as u128).saturating_mul(3);
+        Ok(VoxelEstimate {
+            origin,
+            spacing,
+            dims,
+            cells,
+            triangle_checks,
+        })
+    }
     /// Check finite geometry, dimensions, and binary occupancy.
     pub fn validate(&self) -> Result<()> {
         if !self.spacing.is_finite()
@@ -287,6 +396,17 @@ impl VoxelGrid {
     /// Sample a closed triangle/quad surface at voxel centers. Exact coordinate
     /// welding is used for STL facet-local points; open surfaces are rejected.
     pub fn from_surface(mesh: &Mesh, spacing: f64) -> Result<Self> {
+        Self::from_surface_with_reference(mesh, spacing, None)
+    }
+
+    /// Sample a closed surface on its own grid or an existing grid's geometry.
+    pub fn from_surface_with_reference(
+        mesh: &Mesh,
+        spacing: f64,
+        reference: Option<&Self>,
+    ) -> Result<Self> {
+        let estimate = Self::estimate_surface(mesh, spacing, reference)?;
+        estimate.check_limits()?;
         mesh.validate()?;
         if !spacing.is_finite()
             || spacing <= 0.0
@@ -301,8 +421,6 @@ impl VoxelGrid {
                 "voxelization needs positive spacing and a triangle/quad surface",
             ));
         }
-        let mut minimum = [f64::INFINITY; 3];
-        let mut maximum = [f64::NEG_INFINITY; 3];
         let mut edges = BTreeMap::<([u64; 3], [u64; 3]), usize>::new();
         let mut triangles = Vec::new();
         for cell in &mesh.cells {
@@ -311,12 +429,6 @@ impl VoxelGrid {
                 .iter()
                 .map(|&i| mesh.points[i].position)
                 .collect();
-            for vertex in &vertices {
-                for axis in 0..3 {
-                    minimum[axis] = minimum[axis].min(vertex[axis]);
-                    maximum[axis] = maximum[axis].max(vertex[axis]);
-                }
-            }
             for i in 0..vertices.len() {
                 let a = vertices[i].map(coordinate_bits);
                 let b = vertices[(i + 1) % vertices.len()].map(coordinate_bits);
@@ -343,35 +455,13 @@ impl VoxelGrid {
                 "surface contains a zero-area or nonfinite triangle",
             ));
         }
-        let mut dims = [0; 3];
-        for axis in 0..3 {
-            let n = ((maximum[axis] - minimum[axis]) / spacing).ceil();
-            if !n.is_finite() || n > 2_000_000.0 {
-                return Err(Error::new("E_VOXEL", "voxel grid exceeds limit"));
-            }
-            dims[axis] = (n as usize).max(1);
-        }
-        let count = dims
-            .iter()
-            .try_fold(1usize, |a, &b| a.checked_mul(b))
-            .filter(|&n| n <= 2_000_000)
-            .ok_or_else(|| Error::new("E_VOXEL", "voxel grid exceeds 2,000,000 cells"))?;
-        if count
-            .checked_mul(triangles.len())
-            .and_then(|work| work.checked_mul(3))
-            .is_none_or(|work| work > 100_000_000)
-        {
-            return Err(Error::new(
-                "E_VOXEL",
-                "voxel sampling exceeds 100 million triangle checks; increase --voxel-size or simplify the surface",
-            ));
-        }
         let mut grid = Self {
-            origin: minimum,
+            origin: estimate.origin,
             spacing,
-            dims,
-            occupied: vec![0; count],
+            dims: estimate.dims,
+            occupied: vec![0; estimate.cells as usize],
         };
+        let dims = estimate.dims;
         for z in 0..dims[2] {
             for y in 0..dims[1] {
                 for x in 0..dims[0] {
@@ -652,6 +742,67 @@ mod tests {
             VoxelGrid::from_surface(&grid.surface_mesh().unwrap(), 1.0).unwrap(),
             grid
         );
+    }
+
+    #[test]
+    fn reference_grid_aligns_sampling_and_rejects_clipping() {
+        let cube = VoxelGrid {
+            origin: [0.0; 3],
+            spacing: 1.0,
+            dims: [1, 1, 1],
+            occupied: vec![1],
+        };
+        let surface = cube.surface_mesh().unwrap();
+        let reference = VoxelGrid {
+            origin: [-1.0; 3],
+            spacing: 1.0,
+            dims: [3, 3, 3],
+            occupied: vec![0; 27],
+        };
+        let estimate = VoxelGrid::estimate_surface(&surface, 1.0, Some(&reference)).unwrap();
+        assert_eq!(estimate.dims, [3, 3, 3]);
+        assert_eq!(estimate.cells, 27);
+        let sampled =
+            VoxelGrid::from_surface_with_reference(&surface, 1.0, Some(&reference)).unwrap();
+        assert_eq!(
+            sampled.origin.map(f64::to_bits),
+            reference.origin.map(f64::to_bits)
+        );
+        assert_eq!(
+            sampled
+                .occupied
+                .iter()
+                .map(|&v| usize::from(v))
+                .sum::<usize>(),
+            1
+        );
+        assert_eq!(sampled.occupied[13], 1);
+
+        let clipped = VoxelGrid {
+            origin: [0.25, -1.0, -1.0],
+            ..reference
+        };
+        assert!(
+            VoxelGrid::estimate_surface(&surface, 1.0, Some(&clipped))
+                .unwrap_err()
+                .message
+                .contains("outside reference grid")
+        );
+    }
+
+    #[test]
+    fn oversized_estimate_is_visible_before_sampling() {
+        let cube = VoxelGrid {
+            origin: [0.0; 3],
+            spacing: 1.0,
+            dims: [1, 1, 1],
+            occupied: vec![1],
+        };
+        let estimate =
+            VoxelGrid::estimate_surface(&cube.surface_mesh().unwrap(), 0.005, None).unwrap();
+        assert_eq!(estimate.dims, [200, 200, 200]);
+        assert_eq!(estimate.cells, 8_000_000);
+        assert!(estimate.check_limits().is_err());
     }
 
     #[test]

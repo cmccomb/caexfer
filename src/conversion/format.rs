@@ -206,6 +206,9 @@ pub struct Options {
     /// Cubic voxel edge length for mesh/surface to voxel conversion.
     pub voxel_size: Option<f64>,
 
+    /// VTI file whose origin, spacing, and dimensions define mesh sampling.
+    pub match_grid: Option<PathBuf>,
+
     /// Number of Taubin smoothing cycles for voxel-to-STL surfaces (0 disables).
     pub smooth_iterations: usize,
 
@@ -240,6 +243,7 @@ impl Default for Options {
             max_bytes: 256 * 1024 * 1024,
             msh_version: None,
             voxel_size: None,
+            match_grid: None,
             smooth_iterations: 0,
             zero_missing_rotations: false,
             accept_omissions: false,

@@ -4,6 +4,7 @@ use std::io::Write;
 use crate::core::{Error, FieldLocation, Mesh, Result, VoxelGrid, boundary_surface};
 use crate::formats::{bdf, exodus, frd, inp, msh, op2, stl, su2, unv, vox, vti, vtk, vtu};
 
+use super::load_match_grid;
 use super::{AssumptionKind, ConversionReport, Format, Omission, Options, ReadResult, Stage};
 
 /// Remove unmapped solver property IDs and return the number removed.
@@ -54,6 +55,13 @@ fn convert_inner(
             "--voxel-size applies to mesh/STL to VTI/VOX or STL to a volume mesh",
         ));
     }
+    if options.match_grid.is_some() && (!voxel_size_allowed || options.voxel_size.is_some()) {
+        return Err(Error::new(
+            "E_USAGE",
+            "--match-grid applies to mesh voxelization and supplies the voxel size",
+        ));
+    }
+    let reference = load_match_grid(options)?;
     if options.smooth_iterations > 50
         || (options.smooth_iterations > 0
             && !(target == Format::Stl && source.voxel_grid.is_some()))
@@ -131,15 +139,23 @@ fn convert_inner(
             if volume { format!("external volume faces triangulated for STL; {lower} lower-dimensional cell(s) excluded") }
             else { "quadrilateral faces triangulated for STL".to_owned() }));
     } else if source.format == Format::Stl
-        && options.voxel_size.is_some()
+        && (options.voxel_size.is_some() || reference.is_some())
         && !matches!(target, Format::Stl | Format::Vti | Format::Vox)
     {
-        let grid = VoxelGrid::from_surface(
-            &source.dataset.mesh,
-            options
-                .voxel_size
-                .ok_or_else(|| Error::new("E_USAGE", "missing voxel size"))?,
-        )?;
+        let grid = if let Some(reference) = &reference {
+            VoxelGrid::from_surface_with_reference(
+                &source.dataset.mesh,
+                reference.spacing,
+                Some(reference),
+            )?
+        } else {
+            VoxelGrid::from_surface(
+                &source.dataset.mesh,
+                options
+                    .voxel_size
+                    .ok_or_else(|| Error::new("E_USAGE", "missing voxel size"))?,
+            )?
+        };
         source.dataset.mesh = grid.volume_mesh()?;
         source.omissions.push(Omission::new(
             Stage::Destination,
@@ -187,9 +203,12 @@ fn convert_inner(
                 }
                 grid.clone()
             } else {
-                let spacing = options.voxel_size.ok_or_else(|| {
-                    Error::new("E_USAGE", "mesh to voxel conversion requires --voxel-size")
-                })?;
+                let spacing = options
+                    .voxel_size
+                    .or_else(|| reference.as_ref().map(|grid| grid.spacing))
+                    .ok_or_else(|| {
+                        Error::new("E_USAGE", "mesh to voxel conversion requires --voxel-size")
+                    })?;
                 omissions.push(Omission::new(Stage::Destination,
                     "closed surface sampled at voxel centers; features below grid spacing may disappear"));
                 let surface = if dataset.mesh.cells.iter().any(|c| c.kind.dimension() == 3) {
@@ -207,7 +226,11 @@ fn convert_inner(
                 } else {
                     dataset.mesh.clone()
                 };
-                VoxelGrid::from_surface(&surface, spacing)?
+                if let Some(reference) = &reference {
+                    VoxelGrid::from_surface_with_reference(&surface, spacing, Some(reference))?
+                } else {
+                    VoxelGrid::from_surface(&surface, spacing)?
+                }
             };
             if dataset.mesh.cells.iter().any(|c| c.property_id.is_some()) {
                 omissions.push(Omission::new(

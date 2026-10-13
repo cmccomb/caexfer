@@ -153,6 +153,11 @@ Tet4, Hex8, Wedge6, and Pyramid5 cells. Grid-to-volume output emits Hex8 cells
 with shared corners; grid-to-STL emits exposed faces as two triangles each.
 Fine details, fields, material IDs, and original mesh identity are not preserved.
 The simple sampler rejects jobs above 100 million voxel-triangle checks.
+By default, the grid starts at the source surface's minimum bound. A VTI
+reference grid can instead supply exact origin, spacing, and dimensions;
+surfaces outside its bounds fail rather than being clipped. A read-only preview
+shows dimensions, total cells, and maximum sampler work before occupancy
+allocation. It does not validate watertightness or predict occupied cells.
 
 ### Gmsh MSH
 

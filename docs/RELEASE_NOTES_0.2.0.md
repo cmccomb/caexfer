@@ -7,6 +7,11 @@ boundary of supported linear volume cells can be sampled at an explicit voxel
 size. Occupied voxels can be exported as shared-corner Hex8 cells or as an
 exposed triangle surface. An optional smoothing pass softens the STL surface.
 Conversion reports identify lost fields, IDs, scale, and palette details.
+Mesh voxelization can match an existing VTI grid's origin, spacing, and
+dimensions, with a bounds check that rejects clipping. A read-only conversion
+preview covers every writable route: ordinary conversions produce exact dry
+projection notices, while voxelization estimates grid dimensions and sampler
+work before occupancy allocation.
 
 The update also includes the paired OP2/companion-output recovery work and the
 Exodus classic-header allocation guard from the stabilization branch. An MSC
