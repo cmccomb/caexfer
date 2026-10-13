@@ -15,7 +15,6 @@ pub(super) struct Args {
     pub(super) json: bool,
     pub(super) strict: bool,
     pub(super) overwrite: bool,
-    pub(super) preview: bool,
     pub(super) accept_omissions: bool,
     pub(super) accept_basic_frame: bool,
     pub(super) accept_zero_rotations: bool,
@@ -72,7 +71,7 @@ fn set_option<T>(
 /// Detect an OP2 destination when validating OP2-only options before dispatch.
 fn is_op2_output(args: &Args) -> bool {
     // Inspect only the destination suffix; the full format check runs later.
-    args.command == "convert"
+    matches!(args.command.as_str(), "convert" | "preview")
         && args
             .paths
             .get(1)
@@ -120,7 +119,7 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             }),
             Some(topic) if raw.len() == 2 => {
                 let topic = text(topic)?;
-                if !matches!(topic, "validate" | "convert") {
+                if !matches!(topic, "validate" | "convert" | "preview") {
                     return Err(usage(format!("unknown help topic {topic:?}; use --help")));
                 }
                 Ok(Args {
@@ -147,7 +146,7 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             ..Args::default()
         });
     }
-    if !matches!(command.as_str(), "validate" | "convert") {
+    if !matches!(command.as_str(), "validate" | "convert" | "preview") {
         return Err(usage(format!("unknown command {command:?}; use --help")));
     }
     // A command name alone requests its help, like the bare executable.
@@ -191,8 +190,6 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             set_flag(&mut args.strict, "--strict")?;
         } else if options && arg == "--overwrite" {
             set_flag(&mut args.overwrite, "--overwrite")?;
-        } else if options && arg == "--preview" {
-            set_flag(&mut args.preview, "--preview")?;
         } else if options && arg == "--accept-omissions" {
             set_flag(&mut args.accept_omissions, "--accept-omissions")?;
         } else if options && arg == "--accept-basic-frame" {
@@ -301,9 +298,6 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
     if args.overwrite && args.command != "convert" {
         return Err(usage("--overwrite is only for convert"));
     }
-    if args.preview && args.command != "convert" {
-        return Err(usage("--preview is only for convert"));
-    }
     if (args.accept_omissions
         || args.accept_basic_frame
         || args.accept_zero_rotations
@@ -336,7 +330,7 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
         ));
     }
     if args.msh_version.is_some() {
-        let msh_target = args.command == "convert"
+        let msh_target = matches!(args.command.as_str(), "convert" | "preview")
             && Format::from_output_path(&args.paths[1]).is_ok_and(|format| format == Format::Msh);
         let msh_companion = args.mesh_out.as_deref().is_some_and(|path| {
             Format::from_output_path(path).is_ok_and(|format| format == Format::Msh)
@@ -345,17 +339,17 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             return Err(usage("--msh-version applies only to MSH output"));
         }
     }
-    if args.voxel_size.is_some() && args.command != "convert" {
-        return Err(usage("--voxel-size applies only to convert"));
+    if args.voxel_size.is_some() && !matches!(args.command.as_str(), "convert" | "preview") {
+        return Err(usage("--voxel-size applies only to convert or preview"));
     }
-    if args.match_grid.is_some() && args.command != "convert" {
-        return Err(usage("--match-grid applies only to convert"));
+    if args.match_grid.is_some() && !matches!(args.command.as_str(), "convert" | "preview") {
+        return Err(usage("--match-grid applies only to convert or preview"));
     }
     if args.match_grid.is_some() && args.voxel_size.is_some() {
         return Err(usage("--match-grid supplies voxel size; omit --voxel-size"));
     }
     if args.smooth_iterations.is_some()
-        && (args.command != "convert"
+        && (!matches!(args.command.as_str(), "convert" | "preview")
             || Format::from_output_path(&args.paths[1]).ok() != Some(Format::Stl))
     {
         return Err(usage("--smooth-iterations applies only to STL output"));

@@ -100,11 +100,11 @@ caexfer convert solid.vti solid.vox --accept-omissions
 caexfer convert solid.vox shell.stl --accept-omissions
 caexfer convert solid.vti smooth-shell.stl --smooth-iterations 10 --accept-omissions
 caexfer convert closed.stl volume.vtu --voxel-size 0.5 --accept-omissions
-caexfer convert closed.stl solid.vti --voxel-size 0.5 --preview
+caexfer preview closed.stl solid.vti --voxel-size 0.5
 caexfer convert another.stl aligned.vti --match-grid solid.vti --accept-omissions
 ```
 
-`--preview` works for conversion to any writable format and never creates an
+`caexfer preview INPUT OUTPUT` works with any writable format and never creates an
 output. It shows formats, source counts, and reported losses. Ordinary routes
 run a complete dry projection; mesh voxelization stops after calculating grid
 dimensions and the worst-case sampling work. Its destination losses and closed

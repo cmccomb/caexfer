@@ -43,7 +43,7 @@ caexfer convert mesh.unv mesh.vtu
 caexfer convert results.exo results.vtu --step 0
 caexfer convert examples/donut.stl donut.vti --voxel-size 0.25 --accept-omissions
 caexfer convert donut.vti donut-roundtrip.stl --accept-omissions
-caexfer convert examples/donut.stl donut.vti --voxel-size 0.25 --preview
+caexfer preview examples/donut.stl donut.vti --voxel-size 0.25
 caexfer convert other.stl aligned.vti --match-grid donut.vti --accept-omissions
 ```
 
@@ -66,7 +66,7 @@ validation.
 | `-f`, `--formats` | Actual read/write capabilities, not a roadmap |
 | `validate INPUT` | Supported subset checks, projected counts, and source omissions |
 | `convert INPUT OUTPUT` | Project to a writable format; confirm each reported change before installation |
-| `convert INPUT OUTPUT --preview` | Read-only conversion plan with counts and notices; voxel routes show grid dimensions and sampling limits |
+| `preview INPUT OUTPUT` | Read-only conversion plan with counts and notices; voxel routes show grid dimensions and sampling limits |
 
 Input extensions are `.bdf`, `.nas`, `.dat`, `.pch`, `.vtu`, `.vti`, `.vox`, `.vtk`, `.msh`, `.inp`,
 `.frd`, `.op2`, `.stl`, `.su2`, `.unv`, `.exo`, `.e`, and `.exodus`
@@ -86,7 +86,7 @@ retains origin and spacing; VOX does not. See [format limits](SUPPORT.md).
 `--match-grid FILE` uses an existing supported VTI occupancy grid's origin,
 spacing, and dimensions for mesh voxelization. It supplies the voxel size;
 omit `--voxel-size`. The surface must fit completely inside the reference
-grid. Reference occupancy values are ignored. `--preview` creates no output.
+grid. Reference occupancy values are ignored. `caexfer preview` creates no output.
 For ordinary conversions it performs the full projection into a discard
 stream, giving exact destination notices. For mesh voxelization it stops
 before occupancy allocation and sampling; it reports estimated dimensions,

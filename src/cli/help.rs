@@ -11,6 +11,7 @@ USAGE
 
 COMMANDS
   validate  Check supported data, counts, and omissions
+  preview   Inspect a proposed conversion without writing output
   convert   Write a supported projection to an output file
 
 Run 'caexfer COMMAND --help' for options and examples.
@@ -66,7 +67,6 @@ DESTINATION OPTIONS
   --smooth-iterations N      Smooth VTI/VOX to STL surface (1-50 cycles; default: off)
   --mesh-out FILE            Write a companion mesh alongside OP2 output
   --overwrite                Replace existing regular output files
-  --preview                  Inspect conversion and voxel work without writing output
 
 ACCEPTANCE OPTIONS
   --accept-omissions        Accept reported source and destination losses
@@ -93,10 +93,45 @@ EXAMPLES
   caexfer convert model.msh model-2.2.msh --msh-version 2.2
 ";
 
+/// Explain the read-only route with the same source and destination choices.
+const PREVIEW: &str = "caexfer preview: inspect a proposed conversion without writing output
+
+USAGE
+  caexfer preview INPUT OUTPUT [OPTIONS]
+
+INPUT OPTIONS
+  --from FORMAT              Override the input extension; see 'caexfer --formats'
+  --max-bytes N              Limit input size in bytes (default: 268435456 / 256 MiB)
+  --mesh FILE                Companion mesh for OP2/PCH results
+  --subcase N                Select an OP2/PCH displacement subcase
+  --step N                   Select OP2/PCH/Exodus step by zero-based index, or FRD step number
+
+DESTINATION OPTIONS
+  --msh-version 2.2|4.1      MSH output dialect (default: 4.1)
+  --voxel-size N             Cubic cell size for mesh/STL to VTI/VOX, or STL to volume mesh
+  --match-grid FILE          Sample on an existing VTI grid; supplies voxel size
+  --smooth-iterations N      Smooth VTI/VOX to STL surface (1-50 cycles; default: off)
+  --mesh-out FILE            Inspect an OP2 companion mesh projection
+
+GENERAL OPTIONS
+  -j, --json                 Return the plan as JSON (schema_version=1)
+  -h, --help                 Show this command's help
+
+Voxelization reports grid dimensions, cell count, and sampler work without
+building occupancy. Other routes run a complete projection into a discard
+stream and may take as long as conversion. No output file is created.
+
+EXAMPLES
+  caexfer preview model.bdf model.vtu
+  caexfer preview examples/donut.stl donut.vti --voxel-size 0.25
+  caexfer preview other.stl aligned.vti --match-grid donut.vti
+";
+
 /// Return the help for the selected command; parsing ensures it is recognized.
 pub(super) fn for_command(command: &str) -> &'static str {
     match command {
         "validate" => VALIDATE,
+        "preview" => PREVIEW,
         "convert" => CONVERT,
         _ => OVERVIEW,
     }
