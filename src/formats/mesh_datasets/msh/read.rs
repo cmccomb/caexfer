@@ -214,9 +214,6 @@ fn attach_cell_sets(
 ) -> usize {
     let mut generated = 0;
     for ((dimension, tag), cell_ids) in groups {
-        if cell_ids.is_empty() {
-            continue;
-        }
         let name = names.get(&(dimension, tag)).cloned().unwrap_or_else(|| {
             generated += 1;
             format!("physical_{dimension}_{tag}")
@@ -238,9 +235,6 @@ fn attach_node_sets(
 ) -> usize {
     let mut generated = 0;
     for (tag, point_ids) in groups {
-        if point_ids.is_empty() {
-            continue;
-        }
         let name = names.get(&(0, tag)).cloned().unwrap_or_else(|| {
             generated += 1;
             format!("physical_0_{tag}")
@@ -263,14 +257,6 @@ fn attach_node_sets(
 ///
 #[allow(clippy::too_many_lines)] // MSH section counts and records are validated in one pass.
 fn read_41(source: &str) -> Result<(Dataset, usize)> {
-    // Normalize line endings before looking for exact section delimiters.
-    let normalized = source.replace("\r\n", "\n");
-    let source = normalized.as_str();
-    let header = section(source, "MeshFormat")?.ok_or_else(|| err("missing MeshFormat"))?;
-    let mut h = header.split_whitespace();
-    if h.next() != Some("4.1") || h.next() != Some("0") || h.next() != Some("8") {
-        return Err(err("only ASCII MSH 4.1 with 8-byte data size is supported"));
-    }
     let names = physical_names(source)?;
     let entity_physical = entity_physical_tags(source)?;
     let mut selected_cells: BTreeMap<(u8, u64), Vec<u64>> = BTreeMap::new();

@@ -206,3 +206,32 @@ fn writer_preflights_fixed_width_limits_before_writing() {
         assert_eq!(encoded, []);
     }
 }
+
+/// Binary flags and surplus result continuations must fail before field export.
+#[test]
+fn unsupported_frd_block_modes_and_continuations_fail() {
+    let base = include_str!("../../../../tests/fixtures/linear-results.frd");
+    let binary_nodes = base.replacen(" 2C\n", &format!(" 2C{:68}2\n", ""), 1);
+    assert!(
+        read(binary_nodes.as_bytes())
+            .unwrap_err()
+            .message
+            .contains("binary FRD block")
+    );
+    let binary_results = base.replacen(" 100CL101\n", &format!(" 100C{:69}2\n", ""), 1);
+    assert!(
+        read(binary_results.as_bytes())
+            .unwrap_err()
+            .message
+            .contains("binary FRD block")
+    );
+    let extra = base.replacen(" -1 2 0.1 0.0 0.0\n", " -1 2 0.1 0.0 0.0\n -2 1\n", 1);
+    assert!(
+        read(extra.as_bytes())
+            .unwrap_err()
+            .message
+            .contains("extra result continuation")
+    );
+    let invalid = base.replacen(" -2 1 2.0 3.0 4.0 5.0 6.0 7.0", " -2 1 2.0 3.0", 1);
+    assert_eq!(read(invalid.as_bytes()).unwrap_err().code, "E_FRD");
+}

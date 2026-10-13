@@ -305,7 +305,7 @@ pub fn write_data(dataset: &Dataset, mut writer: impl Write) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{read_projection, write_data};
-    use crate::core::CellKind;
+    use crate::core::{CellKind, Field, FieldLocation};
 
     /// Round-trip the supported UNV families using a Gmsh-generated fixture.
     #[test]
@@ -331,5 +331,64 @@ mod tests {
         let missing_node = source.replacen("         1         2", "         1       999", 1);
         assert_ne!(missing_node, source);
         assert!(read_projection(&missing_node).is_err());
+    }
+
+    /// Reject malformed section delimiters, coordinate rows, and connectivity.
+    #[test]
+    fn malformed_geometry_sections_fail_before_projection() {
+        let base = "-1\n2411\n1 1 1 11\n0 0 0\n2 1 1 11\n1 0 0\n-1\n-1\n2412\n1 21 0 0 7 2\n0 0 0\n1 2\n-1\n";
+        assert_eq!(read_projection(base).unwrap().dataset.mesh.cells.len(), 1);
+        for (old, new, expected) in [
+            ("-1\n2411", "0\n2411", "expected UNV dataset delimiter"),
+            ("1 1 1 11", "1 1 1", "expected 4 integer values"),
+            ("0 0 0", "0 0", "UNV node needs three coordinates"),
+            (
+                "1 21 0 0 7 2",
+                "1 21 0 0 7 3",
+                "descriptor and node count disagree",
+            ),
+            ("1 2\n-1", "1 2 1\n-1", "invalid UNV connectivity row width"),
+            ("-1\n2411", "-1\n2412", "duplicate or out-of-order"),
+        ] {
+            let changed = base.replacen(old, new, 1);
+            let error = read_projection(&changed).unwrap_err();
+            assert!(error.message.contains(expected), "{new}: {error}");
+        }
+        assert!(
+            read_projection("-1\n2411\n-1\n")
+                .unwrap_err()
+                .message
+                .contains("requires 2411 nodes and 2412 elements")
+        );
+    }
+
+    /// Direct UNV output must reject data it has no representation for.
+    #[test]
+    fn writer_rejects_results_and_solver_properties() {
+        let base = "-1\n2411\n1 1 1 11\n0 0 0\n2 1 1 11\n1 0 0\n-1\n-1\n2412\n1 21 0 0 7 2\n0 0 0\n1 2\n-1\n";
+        let original = read_projection(base).unwrap().dataset;
+        let mut invalid = original.clone();
+        invalid.fields.push(Field {
+            name: "temperature".into(),
+            location: FieldLocation::Point,
+            components: vec!["C1".into()],
+            values: vec![1.0, 2.0],
+            step: None,
+            time: None,
+        });
+        assert!(
+            write_data(&invalid, Vec::new())
+                .unwrap_err()
+                .message
+                .contains("numeric fields")
+        );
+        invalid = original;
+        invalid.mesh.cells[0].property_id = Some(7);
+        assert!(
+            write_data(&invalid, Vec::new())
+                .unwrap_err()
+                .message
+                .contains("property IDs")
+        );
     }
 }

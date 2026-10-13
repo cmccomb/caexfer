@@ -234,3 +234,203 @@ fn documented_frd_msh_and_pch_routes_use_only_the_root_api() {
     .unwrap();
     assert_eq!(report.fields, 1);
 }
+
+/// Public validation must preserve each reader's stable error code on bad input.
+#[test]
+fn malformed_inputs_fail_through_the_public_api() {
+    let scratch = Scratch::new();
+    let cases: &[(&str, &[u8], &str)] = &[
+        ("bad.su2", b"NDIME= 2\nNELEM= 1\n5 0 1 9\nNPOIN= 3\n0 0\n1 0\n0 1\nNMARK= 0\n", "E_SU2"),
+        ("bad.unv", b"-1\n2411\n1 1 1 11\n0 0\n-1\n-1\n2412\n-1\n", "E_UNV"),
+        ("bad.stl", b"solid sample\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nendsolid sample\n", "E_STL"),
+        ("bad.msh", b"$MeshFormat\n4.1 0 8\n$EndMeshFormat\n$Nodes\n1 1 1 1\n2 1 1 1\n$EndNodes\n", "E_MSH"),
+        ("bad.vtk", b"# vtk DataFile Version 2.0\nbad\nASCII\nDATASET UNSTRUCTURED_GRID\nPOINTS 1 float\nNaN 0 0\nCELLS 0 0\nCELL_TYPES 0\n", "E_VTK"),
+        ("bad.vtu", b"<VTKFile type=\"UnstructuredGrid\"><UnstructuredGrid><Piece NumberOfPoints=\"1\" NumberOfCells=\"0\"/></UnstructuredGrid></VTKFile>", "E_VTU"),
+        ("bad.frd", b" 2C\n -1 1 0 0 0\n -3\n 3C\n -1 10 99 0 0\n -3\n", "E_FRD"),
+        ("bad.exo", b"not NetCDF", "E_EXODUS"),
+    ];
+    for (name, bytes, code) in cases {
+        let path = scratch.path(name);
+        std::fs::write(&path, bytes).unwrap();
+        assert_eq!(
+            validate(&path, &Options::default()).unwrap_err().code,
+            *code,
+            "{name}"
+        );
+    }
+    let oversized = scratch.path("oversized.vtu");
+    std::fs::write(&oversized, b"12345").unwrap();
+    assert_eq!(
+        validate(
+            &oversized,
+            &Options {
+                max_bytes: 4,
+                ..Options::default()
+            }
+        )
+        .unwrap_err()
+        .code,
+        "E_LIMIT"
+    );
+}
+
+/// Every public destination route should produce a file the reader accepts.
+#[test]
+fn public_conversion_routes_write_valid_destinations() {
+    let scratch = Scratch::new();
+    let source = fixture("examples/plate.bdf");
+    let accepted = Options {
+        accept_all: true,
+        ..Options::default()
+    };
+    for extension in [
+        "bdf", "inp", "unv", "su2", "msh", "vtu", "vtk", "frd", "exo", "op2",
+    ] {
+        let output = scratch.path(&format!("plate.{extension}"));
+        let report = convert(&source, &output, &accepted).unwrap();
+        assert_eq!((report.points, report.cells), (4, 1), "{extension}");
+        assert!(output.metadata().unwrap().len() > 0, "{extension}");
+        let validated = validate(
+            &output,
+            &Options {
+                mesh: (extension == "op2").then(|| source.clone()),
+                ..Options::default()
+            },
+        )
+        .unwrap();
+        assert_eq!((validated.points, validated.cells), (4, 1), "{extension}");
+    }
+    let triangle = scratch.path("triangle.su2");
+    std::fs::write(
+        &triangle,
+        "NDIME= 2\nNELEM= 1\n5 0 1 2\nNPOIN= 3\n0 0\n1 0\n0 1\nNMARK= 0\n",
+    )
+    .unwrap();
+    let stl = scratch.path("triangle.stl");
+    convert(&triangle, &stl, &accepted).unwrap();
+    assert_eq!(validate(&stl, &Options::default()).unwrap().cells, 1);
+}
+
+/// A complete two-step Exodus scalar series survives the public file route.
+#[test]
+fn exodus_result_series_roundtrips_through_public_api() {
+    let scratch = Scratch::new();
+    let output = scratch.path("series.exo");
+    let report = convert(
+        fixture("tests/fixtures/exodus-two-blocks.exo"),
+        &output,
+        &Options {
+            accept_all: true,
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    assert_eq!((report.points, report.cells, report.fields), (4, 2, 4));
+    let reread = validate(&output, &Options::default()).unwrap();
+    assert_eq!((reread.points, reread.cells, reread.fields), (4, 2, 4));
+    let selected = validate(
+        &output,
+        &Options {
+            step: Some(1),
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(selected.fields, 2);
+}
+
+/// Selecting a later PCH step yields one OP2 table with an explicit loss report.
+#[test]
+fn selected_pch_step_to_op2_reports_step_loss() {
+    let scratch = Scratch::new();
+    let mesh = fixture("tests/fixtures/pch-companion.bdf");
+    let output = scratch.path("selected.op2");
+    let report = convert(
+        fixture("tests/fixtures/pch-multiple.pch"),
+        &output,
+        &Options {
+            mesh: Some(mesh.clone()),
+            subcase: Some(2),
+            step: Some(1),
+            accept_all: true,
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    assert!(
+        report
+            .omissions
+            .iter()
+            .any(|item| item.detail.contains("step number is not encoded"))
+    );
+    let reread = validate(
+        &output,
+        &Options {
+            mesh: Some(mesh),
+            subcase: Some(2),
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    assert_eq!((reread.points, reread.fields), (2, 1));
+}
+
+/// Source metadata outside the projection must appear in validation receipts.
+#[test]
+fn source_metadata_losses_are_reported_by_public_validation() {
+    let scratch = Scratch::new();
+    let frd = scratch.path("metadata.frd");
+    let frd_text = format!(
+        " 1U local parameter\n{}",
+        include_str!("fixtures/linear-results.frd")
+    );
+    std::fs::write(&frd, frd_text).unwrap();
+    assert!(
+        validate(&frd, &Options::default())
+            .unwrap()
+            .omissions
+            .iter()
+            .any(|item| item.detail.contains("user/model parameter"))
+    );
+
+    let msh = scratch.path("metadata.msh");
+    let msh_text = format!(
+        "{}$Comments\nexternal metadata\n$EndComments\n",
+        include_str!("fixtures/named-boundary.msh")
+    );
+    std::fs::write(&msh, msh_text).unwrap();
+    assert!(
+        validate(&msh, &Options::default())
+            .unwrap()
+            .omissions
+            .iter()
+            .any(|item| item.detail.contains("$Comments"))
+    );
+
+    let triangle = scratch.path("triangle.su2");
+    std::fs::write(
+        &triangle,
+        "NDIME= 2\nNELEM= 1\n5 0 1 2\nNPOIN= 3\n0 0\n1 0\n0 1\nNMARK= 0\n",
+    )
+    .unwrap();
+    let stl = scratch.path("attributed.stl");
+    convert(
+        &triangle,
+        &stl,
+        &Options {
+            accept_all: true,
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    let mut bytes = std::fs::read(&stl).unwrap();
+    bytes[84 + 48] = 1;
+    std::fs::write(&stl, bytes).unwrap();
+    assert!(
+        validate(&stl, &Options::default())
+            .unwrap()
+            .omissions
+            .iter()
+            .any(|item| item.detail.contains("attribute bytes"))
+    );
+}

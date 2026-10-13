@@ -374,4 +374,67 @@ mod tests {
         dataset.mesh.points[0].position[0] = f64::MAX;
         assert_eq!(write_data(&dataset, Vec::new()).unwrap_err().code, "E_STL");
     }
+
+    /// Malformed ASCII and binary facets must not yield partial triangle meshes.
+    #[test]
+    fn malformed_facets_and_nonfinite_values_are_rejected() {
+        let base = "solid sample\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid sample\n";
+        for (old, new, expected) in [
+            (
+                "solid sample",
+                "surface sample",
+                "missing ASCII STL solid header",
+            ),
+            (
+                "facet normal 0 0 1",
+                "facet normal NaN 0 1",
+                "nonfinite facet normal",
+            ),
+            (
+                "facet normal 0 0 1",
+                "face normal 0 0 1",
+                "expected facet normal",
+            ),
+            ("vertex 1 0 0", "point 1 0 0", "expected vertex"),
+            ("vertex 1 0 0", "vertex NaN 0 0", "nonfinite vertex"),
+            (
+                "endloop\nendfacet",
+                "endloop\nendface",
+                "expected endloop and endfacet",
+            ),
+            ("endsolid sample", "", "missing endsolid"),
+        ] {
+            let changed = base.replacen(old, new, 1);
+            let error = read_projection(changed.as_bytes()).unwrap_err();
+            assert!(error.message.contains(expected), "{new}: {error}");
+        }
+        let mut binary = Vec::new();
+        write_data(
+            &read_projection(base.as_bytes()).unwrap().dataset,
+            &mut binary,
+        )
+        .unwrap();
+        binary[96..100].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert!(
+            read_projection(&binary)
+                .unwrap_err()
+                .message
+                .contains("nonfinite STL value")
+        );
+    }
+
+    /// Degenerate triangles cannot produce a finite binary facet normal.
+    #[test]
+    fn zero_area_triangles_are_rejected_on_output() {
+        let base = b"solid s\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid s\n";
+        let mut dataset = read_projection(base).unwrap().dataset;
+        dataset.mesh.points[1].position = [0.0; 3];
+        dataset.mesh.points[2].position = [0.0; 3];
+        assert!(
+            write_data(&dataset, Vec::new())
+                .unwrap_err()
+                .message
+                .contains("degenerate STL triangle")
+        );
+    }
 }

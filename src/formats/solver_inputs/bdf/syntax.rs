@@ -269,17 +269,13 @@ impl ParsedBdf {
     /// Index bounded BDF source bytes for geometry projection.
     #[cfg(test)]
     pub(crate) fn parse(input: impl AsRef<[u8]>) -> Result<Self> {
-        Self::parse_with_options(input, ParseOptions::default())
+        Self::parse_with_options(input.as_ref(), ParseOptions::default())
     }
 
     /// Parse bytes under independent resource limits.
     #[allow(clippy::too_many_lines)] // Source offsets and continuation state stay in one pass.
-    pub(crate) fn parse_with_options(
-        input: impl AsRef<[u8]>,
-        options: ParseOptions,
-    ) -> Result<Self> {
+    pub(crate) fn parse_with_options(input: &[u8], options: ParseOptions) -> Result<Self> {
         // Resource limits apply before any card semantics are interpreted.
-        let input = input.as_ref();
         if input.len() > options.max_bytes {
             return Err(Error::new("E_LIMIT", "input exceeds max_bytes"));
         }

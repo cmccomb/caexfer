@@ -243,7 +243,7 @@ fn parser_shape_limits_report_the_offending_line() {
         ),
     ];
     for (source, options, line) in cases {
-        let error = ParsedBdf::parse_with_options(source, options).unwrap_err();
+        let error = ParsedBdf::parse_with_options(source.as_bytes(), options).unwrap_err();
         assert_eq!(error.code, "E_LIMIT", "{source:?}");
         assert_eq!(error.line, line, "{source:?}");
     }

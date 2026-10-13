@@ -30,7 +30,7 @@ pub fn convert(
     mut source: ReadResult,
     target: Format,
     options: &Options,
-    mut writer: impl Write,
+    writer: &mut dyn Write,
 ) -> Result<ConversionReport> {
     // Count fields before destination-specific filtering; the report describes
     // the source dataset as well as any losses during output.
@@ -78,7 +78,7 @@ pub fn convert(
                     ));
                 }
             }
-            vtu::write_data(dataset, &mut writer)?;
+            vtu::write_data(dataset, writer)?;
         }
         Format::Vtk => {
             for field in &dataset.fields {
@@ -103,7 +103,7 @@ pub fn convert(
                     ));
                 }
             }
-            vtk::write_data(dataset, &mut writer)?;
+            vtk::write_data(dataset, writer)?;
         }
         Format::Stl => {
             if !dataset.fields.is_empty() {
@@ -126,7 +126,7 @@ pub fn convert(
                 "STL has no node or element IDs or shared-vertex identity; binary coordinates use float32",
             ));
             dataset.fields.clear();
-            stl::write_data(dataset, &mut writer)?;
+            stl::write_data(dataset, writer)?;
         }
         Format::Su2 => {
             if !dataset.fields.is_empty() {
@@ -182,7 +182,7 @@ pub fn convert(
                 "SU2 uses positional connectivity; original node and element IDs are not encoded",
             ));
             dataset.fields.clear();
-            su2::write_data(dataset, &mut writer)?;
+            su2::write_data(dataset, writer)?;
         }
         Format::Unv => {
             if !dataset.fields.is_empty() {
@@ -202,7 +202,7 @@ pub fn convert(
                 ));
             }
             dataset.fields.clear();
-            unv::write_data(dataset, &mut writer)?;
+            unv::write_data(dataset, writer)?;
         }
         Format::Exodus => {
             let properties = omit_property_ids(&mut dataset.mesh);
@@ -216,7 +216,7 @@ pub fn convert(
                 Stage::Destination,
                 "Exodus element block IDs are generated from cell topology; no source block identity is inferred",
             ));
-            exodus::write_data(dataset, &mut writer)?;
+            exodus::write_data(dataset, writer)?;
         }
         Format::Msh => {
             // MSH stores numeric tuples but loses these component labels and
@@ -256,11 +256,7 @@ pub fn convert(
                     format!("{props} property IDs have no MSH entity mapping in this exporter"),
                 ));
             }
-            msh::write_version(
-                dataset,
-                options.msh_version.unwrap_or_default(),
-                &mut writer,
-            )?;
+            msh::write_version(dataset, options.msh_version.unwrap_or_default(), writer)?;
         }
         Format::Inp | Format::Bdf => {
             // These writers emit geometry-only solver input, so result fields
@@ -283,7 +279,7 @@ pub fn convert(
                         format!("{props} property IDs omitted from INP"),
                     ));
                 }
-                inp::write(&dataset.mesh, &mut writer)?;
+                inp::write(&dataset.mesh, writer)?;
             } else {
                 // BDF requires a PID on these element cards; the writer uses
                 // placeholder 1 where the source mesh has none.
@@ -299,7 +295,7 @@ pub fn convert(
                         format!("{missing} BDF element(s) use placeholder PID 1; no property cards are emitted"),
                     ));
                 }
-                bdf::mesh::write(&dataset.mesh, &mut writer)?;
+                bdf::mesh::write(&dataset.mesh, writer)?;
             }
         }
         Format::Frd => {
@@ -351,7 +347,7 @@ pub fn convert(
                 Stage::Destination,
                 "FRD ASCII E12.5 rounds coordinates and field values to six significant digits",
             ));
-            frd::write(dataset, &mut writer)?;
+            frd::write(dataset, writer)?;
         }
         Format::Op2 => {
             // The adapter writes a single real nodal displacement table.
