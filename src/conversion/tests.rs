@@ -626,7 +626,7 @@ fn mesh_surface_and_volume_routes_preserve_only_mappable_fields() {
     let volume = crate::formats::vtu::read_projection(std::str::from_utf8(&volume_bytes).unwrap())
         .unwrap()
         .dataset;
-    assert!(volume.fields.is_empty());
+    assert_eq!(volume.fields, Vec::new());
     assert!(
         volume
             .mesh
