@@ -238,6 +238,36 @@ fn invalid_xml_names_fail_before_writing() {
     }
 }
 
+/// User fields cannot shadow arrays that preserve original mesh identity.
+#[test]
+fn reserved_identity_array_names_are_rejected_before_output() {
+    for reserved in [
+        "nastran_node_id",
+        "nastran_element_id",
+        "nastran_property_id",
+    ] {
+        let dataset = Dataset {
+            mesh: triangle(),
+            fields: vec![Field {
+                name: reserved.into(),
+                location: FieldLocation::Point,
+                components: vec!["C1".into()],
+                values: vec![1.0, 2.0, 3.0],
+                step: None,
+                time: None,
+            }],
+        };
+        let mut output = Vec::new();
+        assert!(
+            write_data(&dataset, &mut output)
+                .unwrap_err()
+                .message
+                .contains("reserved ID array")
+        );
+        assert_eq!(output, []);
+    }
+}
+
 /// Reject malformed XML structure before accepting changed geometry.
 #[test]
 fn structural_xml_mutations_fail_before_geometry_can_change() {

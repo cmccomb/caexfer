@@ -17,8 +17,8 @@ fn omit_property_ids(mesh: &mut Mesh) -> usize {
 /// Write a previously read source in another supported format.
 ///
 /// OP2 output requires exactly one nodal displacement field. A caller may
-/// supply a synthetic field, but must set
-/// `source.assumed_zero` to mark that provenance in the OP2 title.
+/// supply a synthetic field with a `SyntheticZero` assumption to mark that
+/// provenance in the OP2 title.
 ///
 /// # Errors
 ///
@@ -30,11 +30,15 @@ pub fn convert(
     mut source: ReadResult,
     target: Format,
     options: &Options,
-    mut writer: impl Write,
+    writer: &mut dyn Write,
 ) -> Result<ConversionReport> {
     // Count fields before destination-specific filtering; the report describes
     // the source dataset as well as any losses during output.
     let source_fields = source.dataset.fields.len();
+    let assumed_zero = source
+        .omissions
+        .iter()
+        .any(|item| item.assumption == Some(AssumptionKind::SyntheticZero));
     let dataset = &mut source.dataset;
     let omissions = &mut source.omissions;
     if target != Format::Su2 {
@@ -67,14 +71,14 @@ pub fn convert(
             // require the caller to select a step first.
             let mut seen = BTreeSet::new();
             for field in &dataset.fields {
-                if !seen.insert((field.location as u8, field.name.clone())) {
+                if !seen.insert((field.location as u8, field.name.as_str())) {
                     return Err(Error::new(
                         "E_VTU",
                         "multiple steps of one field; choose --step",
                     ));
                 }
             }
-            vtu::write_data(dataset, &mut writer)?;
+            vtu::write_data(dataset, writer)?;
         }
         Format::Vtk => {
             for field in &dataset.fields {
@@ -99,7 +103,7 @@ pub fn convert(
                     ));
                 }
             }
-            vtk::write_data(dataset, &mut writer)?;
+            vtk::write_data(dataset, writer)?;
         }
         Format::Stl => {
             if !dataset.fields.is_empty() {
@@ -122,7 +126,7 @@ pub fn convert(
                 "STL has no node or element IDs or shared-vertex identity; binary coordinates use float32",
             ));
             dataset.fields.clear();
-            stl::write_data(dataset, &mut writer)?;
+            stl::write_data(dataset, writer)?;
         }
         Format::Su2 => {
             if !dataset.fields.is_empty() {
@@ -178,7 +182,7 @@ pub fn convert(
                 "SU2 uses positional connectivity; original node and element IDs are not encoded",
             ));
             dataset.fields.clear();
-            su2::write_data(dataset, &mut writer)?;
+            su2::write_data(dataset, writer)?;
         }
         Format::Unv => {
             if !dataset.fields.is_empty() {
@@ -198,7 +202,7 @@ pub fn convert(
                 ));
             }
             dataset.fields.clear();
-            unv::write_data(dataset, &mut writer)?;
+            unv::write_data(dataset, writer)?;
         }
         Format::Exodus => {
             let properties = omit_property_ids(&mut dataset.mesh);
@@ -212,7 +216,7 @@ pub fn convert(
                 Stage::Destination,
                 "Exodus element block IDs are generated from cell topology; no source block identity is inferred",
             ));
-            exodus::write_data(dataset, &mut writer)?;
+            exodus::write_data(dataset, writer)?;
         }
         Format::Msh => {
             // MSH stores numeric tuples but loses these component labels and
@@ -252,11 +256,7 @@ pub fn convert(
                     format!("{props} property IDs have no MSH entity mapping in this exporter"),
                 ));
             }
-            msh::write_version(
-                dataset,
-                options.msh_version.unwrap_or_default(),
-                &mut writer,
-            )?;
+            msh::write_version(dataset, options.msh_version.unwrap_or_default(), writer)?;
         }
         Format::Inp | Format::Bdf => {
             // These writers emit geometry-only solver input, so result fields
@@ -279,7 +279,7 @@ pub fn convert(
                         format!("{props} property IDs omitted from INP"),
                     ));
                 }
-                inp::write(&dataset.mesh, &mut writer)?;
+                inp::write(&dataset.mesh, writer)?;
             } else {
                 // BDF requires a PID on these element cards; the writer uses
                 // placeholder 1 where the source mesh has none.
@@ -295,7 +295,7 @@ pub fn convert(
                         format!("{missing} BDF element(s) use placeholder PID 1; no property cards are emitted"),
                     ));
                 }
-                bdf::mesh::write(&dataset.mesh, &mut writer)?;
+                bdf::mesh::write(&dataset.mesh, writer)?;
             }
         }
         Format::Frd => {
@@ -347,29 +347,24 @@ pub fn convert(
                 Stage::Destination,
                 "FRD ASCII E12.5 rounds coordinates and field values to six significant digits",
             ));
-            frd::write(dataset, &mut writer)?;
+            frd::write(dataset, writer)?;
         }
         Format::Op2 => {
             // The adapter writes a single real nodal displacement table.
-            let matches: Vec<_> = dataset
-                .fields
-                .iter()
-                .filter(|field| {
-                    let name = field.name.to_ascii_uppercase();
-                    field.location == FieldLocation::Point
-                        && (name == "DISP"
-                            || name == "DISPLACEMENT"
-                            || name.starts_with("DISPLACEMENT_SUBCASE_"))
-                        && matches!(field.components.len(), 3 | 6)
-                })
-                .collect();
-            if matches.len() != 1 {
+            let mut matches = dataset.fields.iter().filter(|field| {
+                let name = field.name.to_ascii_uppercase();
+                field.location == FieldLocation::Point
+                    && (name == "DISP"
+                        || name == "DISPLACEMENT"
+                        || name.starts_with("DISPLACEMENT_SUBCASE_"))
+                    && matches!(field.components.len(), 3 | 6)
+            });
+            let (Some(field), None) = (matches.next(), matches.next()) else {
                 return Err(Error::new(
                     "E_OP2",
                     "OP2 output requires exactly one 3- or 6-component nodal DISP field; select one result step",
                 ));
-            }
-            let field = matches[0];
+            };
 
             // Recover a subcase encoded in the field name, defaulting to 1
             // for generic DISP names.
@@ -413,7 +408,7 @@ pub fn convert(
                 field,
                 subcase,
                 options.zero_missing_rotations,
-                source.assumed_zero,
+                assumed_zero,
             )?;
             writer.write_all(&bytes)?;
         }

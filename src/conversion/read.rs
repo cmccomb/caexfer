@@ -184,7 +184,7 @@ pub fn read_path(path: &Path, options: &Options) -> Result<ReadResult> {
         ));
     }
     let mut generated_point_ids = false;
-    let (dataset, omissions, assumed_zero) = match format {
+    let (dataset, omissions) = match format {
         Format::Bdf => {
             // BDF projection can lose solver cards while retaining geometry.
             let projection = bdf::mesh::read_from(File::open(path)?, options.max_bytes)?;
@@ -204,7 +204,6 @@ pub fn read_path(path: &Path, options: &Options) -> Result<ReadResult> {
                     fields: Vec::new(),
                 },
                 omissions,
-                false,
             )
         }
         Format::Vtu => {
@@ -224,7 +223,7 @@ pub fn read_path(path: &Path, options: &Options) -> Result<ReadResult> {
                     "VTU has no original cell IDs; assigned one-based IDs",
                 ));
             }
-            (projection.dataset, omissions, false)
+            (projection.dataset, omissions)
         }
         Format::Vtk => {
             let text = read_text(
@@ -248,7 +247,7 @@ pub fn read_path(path: &Path, options: &Options) -> Result<ReadResult> {
                     "legacy VTK has no original cell IDs; assigned one-based IDs",
                 ));
             }
-            (projection.dataset, omissions, false)
+            (projection.dataset, omissions)
         }
         Format::Stl => {
             let bytes = read_limited(path, options.max_bytes)?;
@@ -276,7 +275,7 @@ pub fn read_path(path: &Path, options: &Options) -> Result<ReadResult> {
                     ),
                 ));
             }
-            (projection.dataset, omissions, false)
+            (projection.dataset, omissions)
         }
         Format::Su2 => {
             let text = read_text(
@@ -291,7 +290,7 @@ pub fn read_path(path: &Path, options: &Options) -> Result<ReadResult> {
                 Stage::Source,
                 "SU2 uses positional connectivity; assigned one-based node and element IDs",
             )];
-            (projection.dataset, omissions, false)
+            (projection.dataset, omissions)
         }
         Format::Unv => {
             let text = read_text(path, options.max_bytes, "E_UNV", "UNV must be UTF-8 ASCII")?;
@@ -307,7 +306,7 @@ pub fn read_path(path: &Path, options: &Options) -> Result<ReadResult> {
                     format!("{} UNV element header(s) have entity, physical, or color tags without a mapping", projection.tagged_elements),
                 ));
             }
-            (projection.dataset, omissions, false)
+            (projection.dataset, omissions)
         }
         Format::Exodus => {
             let bytes = read_limited(path, options.max_bytes)?;
@@ -318,7 +317,7 @@ pub fn read_path(path: &Path, options: &Options) -> Result<ReadResult> {
                 .into_iter()
                 .map(|detail| Omission::new(Stage::Source, detail))
                 .collect();
-            (projection.dataset, omissions, false)
+            (projection.dataset, omissions)
         }
         Format::Msh => {
             // The MSH reader handles geometry and data; other sections are
@@ -361,7 +360,7 @@ pub fn read_path(path: &Path, options: &Options) -> Result<ReadResult> {
                     format!("{} MSH physical group(s) have no source name; assigned physical_<dimension>_<tag> names", projection.generated_group_names),
                 ));
             }
-            (projection.dataset, omissions, false)
+            (projection.dataset, omissions)
         }
         Format::Inp => {
             let text = read_text(path, options.max_bytes, "E_INP", "INP must be UTF-8 text")?;
@@ -382,7 +381,6 @@ pub fn read_path(path: &Path, options: &Options) -> Result<ReadResult> {
                     fields: Vec::new(),
                 },
                 omissions,
-                false,
             )
         }
         Format::Frd => {
@@ -404,7 +402,7 @@ pub fn read_path(path: &Path, options: &Options) -> Result<ReadResult> {
                     "FRD user/model parameter metadata is not represented in the projection",
                 ));
             }
-            (dataset, omissions, false)
+            (dataset, omissions)
         }
         Format::Op2 => {
             // OP2 result tables carry no complete matching mesh on their own.
@@ -429,7 +427,7 @@ pub fn read_path(path: &Path, options: &Options) -> Result<ReadResult> {
                 Stage::Source,
                 "OP2 result tables other than the selected real displacement table are not exported",
             ));
-            (dataset, omissions, assumed_zero)
+            (dataset, omissions)
         }
         Format::Pch => {
             let mesh_path = options
@@ -457,7 +455,7 @@ pub fn read_path(path: &Path, options: &Options) -> Result<ReadResult> {
                     "PCH title, subtitle, and label metadata are not represented",
                 ));
             }
-            (projection.dataset, omissions, false)
+            (projection.dataset, omissions)
         }
     };
     Ok(ReadResult {
@@ -465,6 +463,5 @@ pub fn read_path(path: &Path, options: &Options) -> Result<ReadResult> {
         dataset,
         omissions,
         generated_point_ids,
-        assumed_zero,
     })
 }

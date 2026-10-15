@@ -127,9 +127,27 @@ def main() -> None:
         run('convert', sources['bdf'], msh22, '--msh-version', '2.2', '--accept-all')
         sources['msh22'] = msh22
         sources['pch'] = ROOT / 'tests/fixtures/pch-multiple.pch'
+        triangle = folder / 'triangle.bdf'
+        triangle.write_text('GRID,1,,0,0,0\nGRID,2,,1,0,0\nGRID,3,,0,1,0\n'
+                            'CTRIA3,10,1,1,2,3\n')
+        sources['stl'] = folder / 'triangle.stl'
+        run('convert', triangle, sources['stl'], '--accept-all')
+        sources['su2'] = folder / 'named-boundary.su2'
+        run('convert', ROOT / 'tests/fixtures/named-boundary.msh',
+            sources['su2'], '--accept-all')
+        sources['unv'] = ROOT / 'tests/fixtures/gmsh-six-kind.unv'
+        sources['exodus'] = ROOT / 'tests/fixtures/exodus-two-blocks.exo'
         if options.op2_check:
             qualify_solver_plate(folder)
             sources['op2'] = ROOT / 'tests/fixtures/solid_bending.op2'
+        expected_counts = {
+            'bdf': (4, 1), 'vtu': (4, 1), 'vtk': (4, 1),
+            'msh': (4, 1), 'msh22': (4, 1), 'inp': (4, 1),
+            'frd': (3, 1), 'pch': (2, 1), 'op2': (72, 186),
+            'stl': (3, 1), 'su2': (3, 3), 'unv': (9, 6),
+            'exodus': (4, 2),
+        }
+        source_fields = {'frd': 2, 'pch': 1, 'op2': 1, 'exodus': 2}
         routes = 0
         for source_format, source in sources.items():
             # Result files need matching mesh IDs and sometimes subcase
@@ -139,19 +157,30 @@ def main() -> None:
                 extra = ['--mesh', ROOT / 'tests/fixtures/solid_bending.bdf']
             elif source_format == 'pch':
                 extra = ['--mesh', ROOT / 'tests/fixtures/pch-companion.bdf', '--subcase', '1']
+            elif source_format == 'exodus':
+                extra = ['--step', '1']
+            expected = expected_counts[source_format]
             for target_format in ('bdf', 'vtu', 'vtk', 'msh', 'inp'):
                 # Check basic identity and field counts for every route.
                 target = folder / f'{source_format}-to-{target_format}.{target_format}'
                 report = run('convert', source, target, '--accept-all', *extra)
                 assert target.is_file() and report['points'] > 0 and report['cells'] > 0
-                expected = (72, 186) if source_format == 'op2' else ((3, 1) if source_format == 'frd' else (2, 1) if source_format == 'pch' else (4, 1))
                 assert (report['points'], report['cells']) == expected, (source_format, target_format, report)
+                if source_format == 'stl':
+                    assert any('assigned one-based facet-local IDs' in item['detail']
+                               for item in report['omissions'])
+                if source_format == 'unv':
+                    assert any('UNV dataset 2477' in item['detail']
+                               for item in report['omissions'])
+                if source_format == 'su2':
+                    assert any('named cell set(s) omitted' in item['detail']
+                               for item in report['omissions'])
                 if target_format == 'bdf':
                     assert run('validate', target)['passed']
                 else:
                     validation = run('validate', target)
                     assert (validation['points'], validation['cells']) == expected
-                    expected_fields = 2 if source_format == 'frd' else (1 if source_format in ('op2', 'pch') else 0)
+                    expected_fields = source_fields.get(source_format, 0)
                     if target_format == 'inp':
                         expected_fields = 0
                     assert validation['fields'] == expected_fields, (source_format, target_format, validation)
@@ -178,16 +207,18 @@ def main() -> None:
                          '--accept-all', *extra)
             assert dialect.read_text().startswith('$MeshFormat\n2.2 0 8\n')
             assert (report['points'], report['cells']) == expected
-            assert run('validate', dialect)['fields'] == (2 if source_format == 'frd' else
-                                                         1 if source_format in ('op2', 'pch') else 0)
+            assert run('validate', dialect)['fields'] == source_fields.get(source_format, 0)
             routes += 1
             target = folder / f'{source_format}-to-frd.frd'
             report = run('convert', source, target, '--accept-all', *extra)
             assert target.is_file() and report['points'] == expected[0]
             validation = run('validate', target)
             assert (validation['points'], validation['cells']) == expected
-            assert validation['fields'] == (2 if source_format == 'frd' else
-                                            1 if source_format in ('op2', 'pch') else 0)
+            assert validation['fields'] == (1 if source_format == 'exodus'
+                                            else source_fields.get(source_format, 0))
+            if source_format == 'exodus':
+                assert any('cell field(s) have no direct FRD' in item['detail']
+                           for item in report['omissions'])
             routes += 1
 
             if source_format == 'frd':
@@ -345,6 +376,18 @@ def main() -> None:
                 assert any('typed float 0.0' in item['detail'] for item in report['omissions'])
                 assert run('validate', target, '--mesh', mesh)['fields'] == 1
                 routes += 1
+        # Exercise geometry-only UNV output and scalar Exodus output through
+        # the CLI, including a complete two-step Exodus result series.
+        for source_name, destination_name, expected_fields in (
+                ('bdf', 'unv', 0), ('unv', 'unv', 0),
+                ('bdf', 'exo', 0), ('exodus', 'exo', 4)):
+            target = folder / f'{source_name}-to-{destination_name}.{destination_name}'
+            report = run('convert', sources[source_name], target, '--accept-all')
+            validation = run('validate', target)
+            assert (report['points'], report['cells']) == expected_counts[source_name]
+            assert (validation['points'], validation['cells'], validation['fields']) == (
+                *expected_counts[source_name], expected_fields)
+            routes += 1
         print(json.dumps({'routes_checked': routes,
                           'sources': sorted(sources)}))
 

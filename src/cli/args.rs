@@ -483,4 +483,48 @@ mod tests {
             .is_err()
         );
     }
+
+    /// Help forms and acceptance dependencies have distinct usage contracts.
+    #[test]
+    fn help_topics_and_basic_frame_dependency_are_checked() {
+        assert_eq!(args(&["help"]).unwrap().command, "help");
+        assert!(args(&["help", "convert"]).unwrap().help_requested);
+        assert!(
+            args(&["help", "unknown"])
+                .unwrap_err()
+                .message
+                .contains("unknown help topic")
+        );
+        assert!(
+            args(&["help", "convert", "extra"])
+                .unwrap_err()
+                .message
+                .contains("one command name")
+        );
+        assert!(
+            args(&["convert", "x.op2", "x.vtu", "--accept-basic-frame"])
+                .unwrap_err()
+                .message
+                .contains("requires --mesh")
+        );
+        assert!(
+            args(&[
+                "convert",
+                "x.op2",
+                "x.vtu",
+                "--from",
+                "op2",
+                "--accept-synthetic-zero"
+            ])
+            .is_ok()
+        );
+        assert!(
+            args(&[
+                "convert", "x.bdf", "x.vtu", "--from", "bdf", "--from", "op2"
+            ])
+            .unwrap_err()
+            .message
+            .contains("duplicate --from")
+        );
+    }
 }

@@ -1,5 +1,6 @@
 //! Conversion-engine tests for supported routes, omissions, and assertions.
 
+use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -36,6 +37,233 @@ impl Drop for Scratch {
     /// Remove generated input and output files after each check.
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Fail on the first byte to verify that every destination propagates I/O errors.
+struct FailingWriter;
+
+impl Write for FailingWriter {
+    fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::other("injected output failure"))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Allow a prefix to reach the adapter, then emulate a full destination.
+struct LimitedWriter {
+    remaining: usize,
+}
+
+impl Write for LimitedWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if self.remaining == 0 {
+            return Err(std::io::Error::other("injected partial output failure"));
+        }
+        let count = bytes.len().min(self.remaining);
+        self.remaining -= count;
+        Ok(count)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Count successful calls and optionally fail at one exact output boundary.
+struct CallBoundaryWriter {
+    calls: usize,
+    fail_on: Option<usize>,
+}
+
+impl Write for CallBoundaryWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if self.fail_on == Some(self.calls) {
+            return Err(std::io::Error::other("injected write-call failure"));
+        }
+        self.calls += 1;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// No format adapter may report success after its destination stream fails.
+#[test]
+fn every_writable_destination_propagates_stream_failures() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let plate =
+        conversion::read_path(&root.join("examples/plate.bdf"), &Options::default()).unwrap();
+    for target in [
+        Format::Bdf,
+        Format::Inp,
+        Format::Unv,
+        Format::Su2,
+        Format::Msh,
+        Format::Vtu,
+        Format::Vtk,
+        Format::Frd,
+        Format::Exodus,
+    ] {
+        let error = conversion::convert(
+            plate.clone(),
+            target,
+            &Options::default(),
+            &mut FailingWriter,
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "E_IO", "{target:?}: {error}");
+    }
+    let triangle = crate::formats::su2::read_projection(
+        "NDIME= 2\nNELEM= 1\n5 0 1 2\nNPOIN= 3\n0 0\n1 0\n0 1\nNMARK= 0\n",
+    )
+    .unwrap()
+    .dataset;
+    let source = ReadResult {
+        format: Format::Su2,
+        dataset: triangle,
+        omissions: Vec::new(),
+        generated_point_ids: true,
+    };
+    let error = conversion::convert(source, Format::Stl, &Options::default(), &mut FailingWriter)
+        .unwrap_err();
+    assert_eq!(error.code, "E_IO", "STL: {error}");
+    let mut displacement = plate;
+    displacement.dataset.fields.push(Field {
+        name: "DISP".into(),
+        location: FieldLocation::Point,
+        components: (1..=6).map(|index| format!("C{index}")).collect(),
+        values: vec![0.0; displacement.dataset.mesh.points.len() * 6],
+        step: Some(2),
+        time: Some(0.0),
+    });
+    let error = conversion::convert(
+        displacement,
+        Format::Op2,
+        &Options::default(),
+        &mut FailingWriter,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "E_IO", "OP2: {error}");
+}
+
+/// A writer that accepts a prefix must still fail when the remaining bytes cannot land.
+#[test]
+fn interrupted_writes_fail_after_partial_output() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let plate =
+        conversion::read_path(&root.join("examples/plate.bdf"), &Options::default()).unwrap();
+    for target in [
+        Format::Bdf,
+        Format::Inp,
+        Format::Unv,
+        Format::Su2,
+        Format::Msh,
+        Format::Vtu,
+        Format::Vtk,
+        Format::Frd,
+        Format::Exodus,
+    ] {
+        let mut complete = Vec::new();
+        conversion::convert(plate.clone(), target, &Options::default(), &mut complete).unwrap();
+        assert!(complete.len() > 1, "{target:?}");
+        for remaining in [1, complete.len() / 2, complete.len() - 1] {
+            let error = conversion::convert(
+                plate.clone(),
+                target,
+                &Options::default(),
+                &mut LimitedWriter { remaining },
+            )
+            .unwrap_err();
+            assert_eq!(
+                error.code, "E_IO",
+                "{target:?} after {remaining} bytes: {error}"
+            );
+        }
+    }
+}
+
+/// Each write call is an independent possible failure for streaming adapters.
+#[test]
+fn every_streaming_write_boundary_propagates_failure() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let plate =
+        conversion::read_path(&root.join("examples/plate.bdf"), &Options::default()).unwrap();
+    for target in [
+        Format::Bdf,
+        Format::Inp,
+        Format::Unv,
+        Format::Su2,
+        Format::Msh,
+        Format::Vtu,
+        Format::Vtk,
+        Format::Frd,
+        Format::Exodus,
+    ] {
+        let mut counter = CallBoundaryWriter {
+            calls: 0,
+            fail_on: None,
+        };
+        conversion::convert(plate.clone(), target, &Options::default(), &mut counter).unwrap();
+        assert!(counter.calls > 0, "{target:?}");
+        for fail_on in 0..counter.calls {
+            let mut writer = CallBoundaryWriter {
+                calls: 0,
+                fail_on: Some(fail_on),
+            };
+            let error =
+                conversion::convert(plate.clone(), target, &Options::default(), &mut writer)
+                    .unwrap_err();
+            assert_eq!(
+                error.code, "E_IO",
+                "{target:?} write call {fail_on}: {error}"
+            );
+        }
+    }
+}
+
+/// Result fields exercise additional writer calls beyond geometry headers.
+#[test]
+fn result_series_writers_propagate_each_stream_failure() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/exodus-two-blocks.exo");
+    let all = conversion::read_path(&source, &Options::default()).unwrap();
+    let first = conversion::read_path(
+        &source,
+        &Options {
+            step: Some(0),
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    for (read, target) in [
+        (all, Format::Exodus),
+        (first.clone(), Format::Msh),
+        (first.clone(), Format::Vtu),
+        (first.clone(), Format::Vtk),
+        (first, Format::Frd),
+    ] {
+        let mut counter = CallBoundaryWriter {
+            calls: 0,
+            fail_on: None,
+        };
+        conversion::convert(read.clone(), target, &Options::default(), &mut counter).unwrap();
+        for fail_on in 0..counter.calls {
+            let mut writer = CallBoundaryWriter {
+                calls: 0,
+                fail_on: Some(fail_on),
+            };
+            let error = conversion::convert(read.clone(), target, &Options::default(), &mut writer)
+                .unwrap_err();
+            assert_eq!(
+                error.code, "E_IO",
+                "{target:?} result write call {fail_on}: {error}"
+            );
+        }
     }
 }
 
@@ -141,7 +369,7 @@ fn pch_read_requires_matching_mesh_and_explicit_selection() {
     assert_eq!(read.dataset.fields[0].time, Some(0.5));
     assert!((read.dataset.fields[0].values[0] - 3.0).abs() < f64::EPSILON);
     assert_eq!(
-        conversion::convert(read, Format::Pch, &Options::default(), Vec::new())
+        conversion::convert(read, Format::Pch, &Options::default(), &mut Vec::new())
             .unwrap_err()
             .code,
         "E_FORMAT"
@@ -248,7 +476,7 @@ fn stl_route_reports_missing_identity_and_refuses_volume_export() {
             conversion::read_path(&volume, &Options::default()).unwrap(),
             Format::Stl,
             &Options::default(),
-            Vec::new(),
+            &mut Vec::new(),
         )
         .unwrap_err()
         .code,
@@ -314,7 +542,7 @@ fn unv_geometry_route_reports_native_omissions() {
             conversion::read_path(&pyramid, &Options::default()).unwrap(),
             Format::Unv,
             &Options::default(),
-            Vec::new(),
+            &mut Vec::new(),
         )
         .unwrap_err()
         .code,
@@ -461,7 +689,6 @@ fn classic_exodus_and_stl_report_destination_projection() {
         dataset: crate::formats::stl::read_projection(stl).unwrap().dataset,
         omissions: Vec::new(),
         generated_point_ids: true,
-        assumed_zero: false,
     };
     read.dataset.mesh.cells[0].property_id = Some(7);
     read.dataset.fields.push(Field {
@@ -601,7 +828,6 @@ fn geometry_only_writers_reject_fields_while_conversion_reports_them() {
                 dataset,
                 omissions: Vec::new(),
                 generated_point_ids: matches!(format, Format::Stl | Format::Su2),
-                assumed_zero: false,
             },
             format,
             &Options::default(),
@@ -648,7 +874,6 @@ fn writers_reject_unmapped_properties_while_conversion_reports_them() {
                 dataset,
                 omissions: Vec::new(),
                 generated_point_ids: matches!(format, Format::Stl | Format::Su2),
-                assumed_zero: false,
             },
             format,
             &Options::default(),
@@ -839,9 +1064,14 @@ fn destination_reports_ambiguous_or_dropped_fields() {
         .fields
         .push(duplicated.dataset.fields[0].clone());
     assert_eq!(
-        conversion::convert(duplicated, Format::Vtu, &Options::default(), Vec::new())
-            .unwrap_err()
-            .code,
+        conversion::convert(
+            duplicated,
+            Format::Vtu,
+            &Options::default(),
+            &mut Vec::new()
+        )
+        .unwrap_err()
+        .code,
         "E_VTU"
     );
     let mut cell_field = source.clone();
@@ -857,6 +1087,52 @@ fn destination_reports_ambiguous_or_dropped_fields() {
             .any(|item| item.detail.contains("cell field"))
     );
     assert_ne!(encoded, []);
+}
+
+/// OP2 cannot silently choose among multiple displacement fields.
+#[test]
+fn op2_requires_exactly_one_displacement_field() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut source =
+        conversion::read_path(&root.join("examples/plate.bdf"), &Options::default()).unwrap();
+    assert_eq!(
+        conversion::convert(
+            source.clone(),
+            Format::Op2,
+            &Options::default(),
+            &mut Vec::new()
+        )
+        .unwrap_err()
+        .code,
+        "E_OP2"
+    );
+    let displacement = Field {
+        name: "DISP".into(),
+        location: FieldLocation::Point,
+        components: ["T1", "T2", "T3", "R1", "R2", "R3"]
+            .map(str::to_owned)
+            .to_vec(),
+        values: vec![0.0; source.dataset.mesh.points.len() * 6],
+        step: None,
+        time: None,
+    };
+    source.dataset.fields.push(displacement.clone());
+    let mut output = Vec::new();
+    conversion::convert(
+        source.clone(),
+        Format::Op2,
+        &Options::default(),
+        &mut output,
+    )
+    .unwrap();
+    assert_ne!(output, []);
+    source.dataset.fields.push(displacement);
+    assert_eq!(
+        conversion::convert(source, Format::Op2, &Options::default(), &mut Vec::new())
+            .unwrap_err()
+            .code,
+        "E_OP2"
+    );
 }
 
 /// Assign and report stable IDs for VTU without identity arrays.

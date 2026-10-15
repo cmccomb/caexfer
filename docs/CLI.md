@@ -80,9 +80,11 @@ it; `--strict` fails on that notice. Conversion requires confirmation or
 use the basic frame. Any fields in the companion file are ignored.
 OP2 output carries one displacement table and needs a separately retained
 matching mesh. `--mesh-out FILE` optionally writes a geometry-only companion
-in BDF, VTU, VTK, MSH, INP, or FRD format. `--subcase N` and
-zero-based `--step N` select an OP2 or PCH displacement result. For FRD, `--step N` selects the
-step number. These selection options also work with `validate`.
+in any writable mesh format: BDF, VTU, VTK, MSH, INP, FRD, STL, SU2, UNV, or
+classic Exodus. The companion must meet that format's topology and storage
+limits. `--subcase N` and zero-based `--step N` select an OP2 or PCH
+displacement result. For FRD, `--step N` selects the step number. These
+selection options also work with `validate`.
 For Exodus input, `--step N` selects a zero-based time step. Without it, the
 reader carries all complete scalar fields and times that the destination can
 represent.
@@ -129,7 +131,8 @@ The version's code list can grow.
 The CLI refuses an existing output path unless `convert --overwrite` is given.
 With `--mesh-out`, the flag applies to both output paths. It does not accept
 omissions or assumptions. The CLI stages and checks both files, obtains any
-required acceptance, then replaces destinations with same-filesystem renames.
+required acceptance, then installs new paths with hard links or replaces
+existing paths with same-filesystem renames.
 It refuses symbolic links, nonregular destinations, and output paths that
 refer to the input file (including hard links on Unix). The public
 `caexfer::convert` operation retains

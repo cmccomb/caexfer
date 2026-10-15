@@ -107,18 +107,27 @@ pub fn read(source: &str) -> Result<Inspection> {
             }
             mode = match keyword.as_str() {
                 "NODE" => {
+                    if parts.next().is_some() {
+                        return Err(err("NODE options are unsupported").at(line_no + 1));
+                    }
                     seen_node = true;
                     Mode::Node
                 }
                 "ELEMENT" => {
                     seen_element = true;
                     let type_value = parts
-                        .find_map(|part| {
+                        .next()
+                        .and_then(|part| {
                             part.split_once('=')
                                 .filter(|(key, _)| key.trim().eq_ignore_ascii_case("TYPE"))
                                 .map(|(_, v)| v.trim().to_ascii_uppercase())
                         })
                         .ok_or_else(|| err("ELEMENT requires TYPE").at(line_no + 1))?;
+                    if parts.next().is_some() {
+                        return Err(
+                            err("ELEMENT options beyond TYPE are unsupported").at(line_no + 1)
+                        );
+                    }
                     Mode::Element(kind(&type_value).map_err(|e| e.at(line_no + 1))?)
                 }
                 _ => {
@@ -130,11 +139,7 @@ pub fn read(source: &str) -> Result<Inspection> {
             };
             continue;
         }
-        let values: Vec<&str> = line
-            .split(',')
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-            .collect();
+        let values: Vec<&str> = line.split(',').map(str::trim).collect();
         match mode {
             Mode::Node => {
                 // Record each original node ID and its internal point index.
@@ -257,4 +262,108 @@ pub fn write(mesh: &Mesh, mut writer: impl Write) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Element records may precede node records, but every reference must resolve.
+    #[test]
+    fn resolves_deferred_element_nodes_by_original_id() {
+        let source = "*ELEMENT, TYPE=B31\n10, 20, 10\n*NODE\n10, 0, 0, 0\n20, 1, 0, 0\n";
+        let inspection = read(source).unwrap();
+        assert_eq!(inspection.mesh.cells[0].id, 10);
+        assert_eq!(inspection.mesh.cells[0].connectivity, [1, 0]);
+        assert_eq!(inspection.mesh.points[0].id, 10);
+    }
+
+    /// Incomplete or ambiguous flat geometry fails with a source line when known.
+    #[test]
+    fn malformed_flat_geometry_is_rejected() {
+        let cases = [
+            (
+                "*NODE\n1, 0, 0\n*ELEMENT, TYPE=B31\n",
+                "NODE needs",
+                Some(2),
+            ),
+            (
+                "*NODE\n1, 0, , 0, 0\n*ELEMENT, TYPE=B31\n",
+                "NODE needs",
+                Some(2),
+            ),
+            (
+                "*NODE\nx, 0, 0, 0\n*ELEMENT, TYPE=B31\n",
+                "invalid node ID",
+                Some(2),
+            ),
+            (
+                "*NODE\n1, x, 0, 0\n*ELEMENT, TYPE=B31\n",
+                "invalid coordinate",
+                Some(2),
+            ),
+            (
+                "*NODE\n1, 0, 0, 0\n1, 1, 0, 0\n*ELEMENT, TYPE=B31\n",
+                "duplicate node ID",
+                Some(3),
+            ),
+            (
+                "*NODE\n1, 0, 0, 0\n*ELEMENT, TYPE=B31\n10, 1\n",
+                "element node count",
+                Some(4),
+            ),
+            (
+                "*NODE\n1, 0, 0, 0\n2, 1, 0, 0\n*ELEMENT, TYPE=B31\n10, 1, , 2\n",
+                "element node count",
+                Some(5),
+            ),
+            (
+                "*NODE\n1, 0, 0, 0\n*ELEMENT, TYPE=B31\nx, 1, 1\n",
+                "invalid element ID",
+                Some(4),
+            ),
+            (
+                "*NODE\n1, 0, 0, 0\n*ELEMENT, TYPE=B31\n10, 1, x\n",
+                "invalid element node",
+                Some(4),
+            ),
+            (
+                "*NODE\n1, 0, 0, 0\n*ELEMENT, TYPE=B31\n10, 1, 2\n",
+                "unknown node 2",
+                None,
+            ),
+            ("*NODE\n1, 0, 0, 0\n*ELEMENT\n", "requires TYPE", Some(3)),
+            (
+                "*NODE\n1, 0, 0, 0\n*ELEMENT, TYPE=C3D10\n",
+                "unsupported element type",
+                Some(3),
+            ),
+            (
+                "*NODE, INPUT=nodes.inp\n*ELEMENT, TYPE=B31\n",
+                "NODE options are unsupported",
+                Some(1),
+            ),
+            (
+                "*NODE\n1, 0, 0, 0\n*ELEMENT, TYPE=B31, INPUT=elements.inp\n",
+                "ELEMENT options beyond TYPE are unsupported",
+                Some(3),
+            ),
+            (
+                "*NODE, NSET=LEFT\n*ELEMENT, TYPE=B31\n",
+                "NODE options are unsupported",
+                Some(1),
+            ),
+            (
+                "*NODE\n1, 0, 0, 0\n*ELEMENT, TYPE=B31, ELSET=BEAMS\n",
+                "ELEMENT options beyond TYPE are unsupported",
+                Some(3),
+            ),
+        ];
+        for (source, message, line) in cases {
+            let error = read(source).unwrap_err();
+            assert_eq!(error.code, "E_INP");
+            assert!(error.message.contains(message), "{source:?}: {error}");
+            assert_eq!(error.line, line, "{source:?}");
+        }
+    }
 }

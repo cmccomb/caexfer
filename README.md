@@ -29,18 +29,23 @@ Add the published library to your Rust project:
 cargo add caexfer
 ```
 
-The CLI and library can perform the same conversions. This sequence carries
-nodal results from FRD through VTU to Gmsh MSH 2.2, then reads PCH results
-with a matching BDF mesh.
+The CLI and library support the same format routes. The examples below use
+fixtures from a repository checkout; run them from its root. This sequence
+carries nodal results from FRD through VTU to Gmsh MSH 2.2, then reads PCH
+results with a matching BDF mesh.
 
 **CLI**
 
 ```sh
 caexfer convert tests/fixtures/linear-results.frd results.vtu
-caexfer convert results.vtu results.msh --msh-version 2.2
+caexfer convert results.vtu results.msh --msh-version 2.2 \
+  --accept-omissions
 caexfer convert tests/fixtures/pch-multiple.pch displacements.vtu \
-  --mesh tests/fixtures/pch-companion.bdf --subcase 1
+  --mesh tests/fixtures/pch-companion.bdf --subcase 1 \
+  --accept-omissions
 ```
+
+These commands create new files; choose fresh output names when rerunning them.
 
 **Rust library**
 
@@ -86,3 +91,14 @@ geometry routes. MSH physical groups become named selections, and SU2 carries
 named boundary markers. OP2 and PCH displacement results require a companion
 mesh with original node IDs; OP2 can write a selected displacement table, while
 PCH is read-only.
+
+## Documentation
+
+- [CLI guide](https://github.com/cmccomb/caexfer/blob/main/docs/CLI.md) covers
+  options, confirmation, output replacement, and JSON receipts.
+- [Library guide](https://github.com/cmccomb/caexfer/blob/main/docs/LIBRARY.md)
+  shows the typed API and acceptance options.
+- [Format support](https://github.com/cmccomb/caexfer/blob/main/docs/SUPPORT.md)
+  lists the exact readable and writable subsets and their limits.
+- [Coverage](https://github.com/cmccomb/caexfer/blob/main/docs/COVERAGE.md)
+  explains what the badge measures.

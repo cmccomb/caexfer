@@ -72,6 +72,7 @@ fn msh22_tags_are_reported_and_counts_are_bounded() {
     assert_eq!(projection.dataset.mesh.cell_sets[0].name, "physical_1_7");
     assert!(read(&source.replace("$Nodes\n2", "$Nodes\n999999999")).is_err());
     assert!(read(&source.replace("30 1 2", "30 1 999999999")).is_err());
+    assert!(read(&source.replace("30 1 2 7 8", "30 1 2 -7 8")).is_err());
 }
 
 /// Preserve overlapping named physical selections on boundary cells.
@@ -107,6 +108,12 @@ fn msh41_physical_point_name_becomes_node_set() {
     assert_eq!(projection.generated_group_names, 0);
     assert_eq!(projection.dataset.mesh.node_sets[0].name, "fixed");
     assert_eq!(projection.dataset.mesh.node_sets[0].point_ids, [10]);
+
+    // Physical tags remain visible when the producer omits display names.
+    let unnamed = source.replace("$PhysicalNames\n1\n0 42 \"fixed\"\n$EndPhysicalNames\n", "");
+    let projection = read_projection(&unnamed).unwrap();
+    assert_eq!(projection.generated_group_names, 1);
+    assert_eq!(projection.dataset.mesh.node_sets[0].name, "physical_0_42");
 }
 
 /// Read all supported topologies from an external Gmsh 2.2 fixture.
@@ -195,4 +202,142 @@ fn msh22_rejects_extra_tokens_and_unrepresentable_ids() {
     let mut output = Vec::new();
     assert_eq!(write_22(&dataset, &mut output).unwrap_err().code, "E_MSH");
     assert_eq!(output, []);
+}
+
+/// Empty 2.2 geometry is a valid explicit mesh, not a missing section.
+#[test]
+fn empty_msh22_sections_are_preserved() {
+    let source =
+        "$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$Nodes\n0\n$EndNodes\n$Elements\n0\n$EndElements\n";
+    let dataset = read(source).unwrap();
+    assert_eq!(dataset.mesh.points, []);
+    assert_eq!(dataset.mesh.cells, []);
+}
+
+/// Malformed physical metadata must fail before attaching misleading groups.
+#[test]
+fn malformed_physical_names_and_entities_are_rejected() {
+    const HEADER: &str = "$MeshFormat\n4.1 0 8\n$EndMeshFormat\n";
+    for (section, message) in [
+        (
+            "$PhysicalNames\n9999\n$EndPhysicalNames\n",
+            "physical name count",
+        ),
+        (
+            "$PhysicalNames\n1\n4 7 \"bad\"\n$EndPhysicalNames\n",
+            "invalid physical name",
+        ),
+        (
+            "$PhysicalNames\n1\n1 7 bad\n$EndPhysicalNames\n",
+            "must be quoted",
+        ),
+        (
+            "$PhysicalNames\n2\n1 7 \"edge\"\n1 7 \"duplicate\"\n$EndPhysicalNames\n",
+            "duplicate physical group",
+        ),
+        (
+            "$PhysicalNames\n0\n1 7 \"extra\"\n$EndPhysicalNames\n",
+            "extra physical name",
+        ),
+        ("$Entities\n1 0 0\n$EndEntities\n", "four entity counts"),
+        (
+            "$Entities\n1 0 0 0\n1 0\n$EndEntities\n",
+            "short entity record",
+        ),
+        (
+            "$Entities\n1 0 0 0\n1 0 0 0 2 7\n$EndEntities\n",
+            "entity physical count exceeds",
+        ),
+    ] {
+        let error = read_projection(&format!("{HEADER}{section}")).unwrap_err();
+        assert!(error.message.contains(message), "{section:?}: {error}");
+    }
+}
+
+/// Reject inconsistent MSH 4.1 block metadata before assigning identity.
+#[test]
+fn msh41_rejects_inconsistent_entity_node_and_element_blocks() {
+    // Git may check out text fixtures with CRLF on Windows; mutation anchors
+    // describe logical MSH lines rather than checkout line endings.
+    let base = include_str!("../../../../tests/fixtures/named-boundary.msh").replace("\r\n", "\n");
+    for (old, new, expected) in [
+        (
+            "0 1 1 0\n1 0",
+            "999999 1 1 0\n1 0",
+            "entity count exceeds input",
+        ),
+        ("0 1 1 0\n1 0", "0 2 1 0\n1 0", "duplicate entity tag"),
+        (
+            "0 1 1 0\n1 0",
+            "0 1 1 0\n1 0 0 0 1 0 0 0\n1 0",
+            "extra entity records",
+        ),
+        ("4.1 0 8", "4.1 1 8", "only ASCII MSH with 8-byte"),
+        (
+            "1 3 1 3\n2 1 0 3",
+            "999999 3 1 3\n2 1 0 3",
+            "node counts exceed",
+        ),
+        ("2 1 0 3", "2 1 1 3", "parametric nodes are unsupported"),
+        ("1\n2\n3\n0 0 0", "1\n1\n3\n0 0 0", "duplicate node tag"),
+        (
+            "2 2 1 2\n1 1 1 1",
+            "999999 2 1 2\n1 1 1 1",
+            "element counts exceed",
+        ),
+        (
+            "1 1 1 1\n1 1 2",
+            "2 1 1 1\n1 1 2",
+            "element dimension mismatch",
+        ),
+    ] {
+        assert!(base.contains(old), "missing fixture anchor {old:?}");
+        let changed = base.replacen(old, new, 1);
+        let error = read_projection(&changed).unwrap_err();
+        assert!(error.message.contains(expected), "{new}: {error}");
+    }
+}
+
+/// Both MSH dialects reject source property IDs and unquotable field names.
+#[test]
+fn writers_reject_unrepresentable_properties_and_field_names() {
+    let original = read(include_str!(
+        "../../../../tests/fixtures/gmsh-2.2-mixed.msh"
+    ))
+    .unwrap();
+    let mut invalid = original.clone();
+    invalid.mesh.cells[0].property_id = Some(7);
+    assert!(
+        write(&invalid, Vec::new())
+            .unwrap_err()
+            .message
+            .contains("property IDs")
+    );
+    assert!(
+        write_22(&invalid, Vec::new())
+            .unwrap_err()
+            .message
+            .contains("property IDs")
+    );
+    invalid = original;
+    invalid.fields.push(Field {
+        name: "bad\"name".into(),
+        location: FieldLocation::Point,
+        components: vec!["C1".into()],
+        values: vec![0.0; invalid.mesh.points.len()],
+        step: None,
+        time: None,
+    });
+    assert!(
+        write(&invalid, Vec::new())
+            .unwrap_err()
+            .message
+            .contains("field name")
+    );
+    assert!(
+        write_22(&invalid, Vec::new())
+            .unwrap_err()
+            .message
+            .contains("field name")
+    );
 }

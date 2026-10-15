@@ -436,4 +436,64 @@ mod tests {
             data
         );
     }
+
+    /// Validate the section boundaries before constructing a partial mesh.
+    #[test]
+    fn malformed_sections_and_connectivity_fail_with_specific_errors() {
+        let base = "NDIME= 2\nNELEM= 1\n5 0 1 2\nNPOIN= 3\n0 0\n1 0\n0 1\nNMARK= 1\nMARKER_TAG= inlet\nMARKER_ELEMS= 1\n3 0 1\n";
+        for (old, new, expected) in [
+            ("NDIME= 2", "NDIME= 1", "only 2D and 3D"),
+            ("NELEM= 1", "WRONG= 1", "expected NELEM="),
+            ("5 0 1 2", "3 0 1", "wrong dimension"),
+            ("5 0 1 2", "5 0 1", "wrong connectivity width"),
+            ("5 0 1 2", "5 0 1 9", "references missing point"),
+            ("1 0\n0 1", "1 0 0 1\n0 1", "wrong coordinate width"),
+            ("1 0\n0 1", "NaN 0\n0 1", "nonfinite SU2 coordinate"),
+            (
+                "MARKER_TAG= inlet",
+                "MARKER_TAG= ",
+                "invalid SU2 marker name",
+            ),
+            ("3 0 1\n", "3 0 1\nNZONE= 2\n", "trailing or unsupported"),
+        ] {
+            let changed = base.replacen(old, new, 1);
+            let error = read_projection(&changed).unwrap_err();
+            assert!(error.message.contains(expected), "{new}: {error}");
+        }
+    }
+
+    /// The writer must reject mesh metadata SU2 cannot preserve.
+    #[test]
+    fn writer_rejects_nonrepresentable_mesh_metadata() {
+        let base = "NDIME= 2\nNELEM= 1\n5 0 1 2\nNPOIN= 3\n0 0\n1 0\n0 1\nNMARK= 0\n";
+        let original = read_projection(base).unwrap().dataset;
+        let mut invalid = original.clone();
+        invalid.mesh.points[0].position[2] = 1.0;
+        assert!(
+            write_data(&invalid, Vec::new())
+                .unwrap_err()
+                .message
+                .contains("nonzero z")
+        );
+        invalid = original.clone();
+        invalid.mesh.node_sets.push(crate::core::NodeSet {
+            name: "fixed".into(),
+            point_ids: vec![1],
+        });
+        assert!(
+            write_data(&invalid, Vec::new())
+                .unwrap_err()
+                .message
+                .contains("boundary cell sets only")
+        );
+        invalid = original;
+        invalid.mesh.cells[0].kind = CellKind::Line2;
+        invalid.mesh.cells[0].connectivity.truncate(2);
+        assert!(
+            write_data(&invalid, Vec::new())
+                .unwrap_err()
+                .message
+                .contains("2D or 3D interior")
+        );
+    }
 }

@@ -115,3 +115,38 @@ fn malformed_legacy_attributes_and_offsets_are_rejected() {
     );
     assert_eq!(read(&unsupported_type).unwrap_err().code, "E_VTK");
 }
+
+/// Reject contradictory geometry metadata before exposing a partial grid.
+#[test]
+fn malformed_legacy_grid_metadata_has_specific_diagnostics() {
+    let base = "# vtk DataFile Version 2.0\ngeometry\nASCII\nDATASET UNSTRUCTURED_GRID\nPOINTS 2 float\n0 0 0 1 0 0\nCELLS 1 3\n2 0 1\nCELL_TYPES 1\n3\n";
+    for (old, new, expected) in [
+        (
+            "POINTS 2 float",
+            "POINTS 2 int",
+            "POINTS require float or double",
+        ),
+        ("0 0 0 1 0 0", "0 0 0 NaN 0 0", "nonfinite VTK value"),
+        ("CELLS 1 3", "CELLS 1 2", "cell list exceeds declared size"),
+        ("CELLS 1 3", "CELLS 1 4", "cell list size mismatch"),
+        ("2 0 1", "9 0 1", "unsupported higher-order cell width"),
+        ("CELL_TYPES 1", "CELL_TYPES 2", "cell type count mismatch"),
+        (
+            "CELL_TYPES 1\n3",
+            "CELL_TYPES 1\n5",
+            "cell arity does not match",
+        ),
+    ] {
+        let changed = base.replacen(old, new, 1);
+        let error = read_projection(&changed).unwrap_err();
+        assert!(error.message.contains(expected), "{new}: {error}");
+    }
+    for source in [
+        base.replace("# vtk", "# wrong"),
+        base.replace("ASCII", "ASC\0II"),
+        format!("{base}UNKNOWN 1\n"),
+        format!("{base}POINT_DATA 2\nPOINT_DATA 2\n"),
+    ] {
+        assert_eq!(read_projection(&source).unwrap_err().code, "E_VTK");
+    }
+}

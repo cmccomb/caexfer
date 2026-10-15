@@ -81,7 +81,7 @@ override parsing, coordinate-system, representability, or I/O errors.
 | `max_bytes` | Bound the input and companion mesh reads; default is 256 MiB |
 | `zero_missing_rotations` | Accept float zero for missing OP2 R1/R2/R3 components |
 | `accept_synthetic_zero` | Accept a labeled all-zero OP2 result from result-free BDF or INP geometry |
-| `mesh_output` | Write a separate geometry companion beside OP2 output |
+| `mesh_output` | Write a separate geometry companion for OP2 output at the requested path |
 
 For example, PCH results need a matching BDF mesh and may need result selection:
 

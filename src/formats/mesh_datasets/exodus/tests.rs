@@ -266,3 +266,104 @@ fn writer_requires_explicit_scalar_time_metadata() {
             .contains("times disagree")
     );
 }
+
+/// A series cannot repeat a variable at one step or begin after step one.
+#[test]
+fn writer_rejects_duplicate_and_noncontiguous_result_series() {
+    let original = read_projection(SOURCE, None).unwrap().dataset;
+    let mut duplicate = original.clone();
+    duplicate.fields.push(original.fields[0].clone());
+    assert!(
+        write_data(&duplicate, Vec::new())
+            .unwrap_err()
+            .message
+            .contains("duplicate Exodus variable")
+    );
+
+    let mut later_step_only = original;
+    later_step_only.fields.retain(|field| field.step == Some(2));
+    assert!(
+        write_data(&later_step_only, Vec::new())
+            .unwrap_err()
+            .message
+            .contains("steps must start at 1")
+    );
+}
+
+/// Exodus classic requires representable element IDs and nonempty geometry.
+#[test]
+fn writer_rejects_missing_geometry_and_oversize_element_ids() {
+    let empty = Dataset::default();
+    assert!(
+        write_data(&empty, Vec::new())
+            .unwrap_err()
+            .message
+            .contains("requires nodes and elements")
+    );
+    let mut mesh = read_projection(SOURCE, None).unwrap().dataset;
+    mesh.fields.clear();
+    mesh.mesh.cells[0].id = u64::try_from(i32::MAX).unwrap() + 1;
+    assert!(
+        write_data(&mesh, Vec::new())
+            .unwrap_err()
+            .message
+            .contains("element ID exceeds Int32")
+    );
+}
+
+/// Reject corrupt classic Exodus values without exposing an incomplete mesh.
+#[test]
+fn malformed_element_names_ids_and_coordinates_are_rejected() {
+    fn replace_once(source: &[u8], old: &[u8], new: &[u8]) -> Vec<u8> {
+        assert_eq!(old.len(), new.len());
+        let offsets = source
+            .windows(old.len())
+            .enumerate()
+            .filter_map(|(index, bytes)| (bytes == old).then_some(index))
+            .collect::<Vec<_>>();
+        assert_eq!(offsets.len(), 1, "fixture anchor must be unique");
+        let mut changed = source.to_vec();
+        changed[offsets[0]..offsets[0] + old.len()].copy_from_slice(new);
+        changed
+    }
+    let unsupported = replace_once(SOURCE, b"QUAD", b"NONE");
+    assert!(
+        read_projection(&unsupported, None)
+            .unwrap_err()
+            .message
+            .contains("unsupported Exodus element type")
+    );
+    let unnamed = replace_once(SOURCE, b"TEMP", b"\0\0\0\0");
+    assert!(
+        read_projection(&unnamed, None)
+            .unwrap_err()
+            .message
+            .contains("empty name")
+    );
+    let node_map = [10_i32, 20, 30, 40]
+        .into_iter()
+        .flat_map(i32::to_be_bytes)
+        .collect::<Vec<_>>();
+    let mut invalid_map = node_map.clone();
+    invalid_map[..4].copy_from_slice(&0_i32.to_be_bytes());
+    let invalid = replace_once(SOURCE, &node_map, &invalid_map);
+    assert!(
+        read_projection(&invalid, None)
+            .unwrap_err()
+            .message
+            .contains("nonpositive label")
+    );
+    let coordinates = [0.0_f64, 1.0, 1.0, 0.0]
+        .into_iter()
+        .flat_map(f64::to_be_bytes)
+        .collect::<Vec<_>>();
+    let mut nonfinite = coordinates.clone();
+    nonfinite[..8].copy_from_slice(&f64::NAN.to_be_bytes());
+    let invalid = replace_once(SOURCE, &coordinates, &nonfinite);
+    assert!(
+        read_projection(&invalid, None)
+            .unwrap_err()
+            .message
+            .contains("nonfinite values")
+    );
+}

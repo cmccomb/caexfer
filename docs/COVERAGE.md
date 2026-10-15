@@ -27,5 +27,6 @@ If Rust was installed through Homebrew rather than rustup, set `LLVM_COV` and
 running the script.
 
 The script writes `target/coverage.json` and `target/coverage.lcov` and fails
-when line coverage falls below 90%. The latest workflow run contains the
-current measurement.
+when line coverage falls below 90%. The README badge reports the latest
+completed run on `main`; use a local report or the workflow artifacts for the
+exact branch or commit under review.

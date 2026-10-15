@@ -203,4 +203,41 @@ mod tests {
         )
         .unwrap();
     }
+
+    /// A notice without a typed assumption requires the catchall acceptance.
+    #[test]
+    fn unclassified_assumption_requires_accept_all() {
+        let notice = Omission {
+            stage: Stage::Assumption,
+            assumption: None,
+            detail: "unclassified inference".into(),
+        };
+        assert_eq!(flag_for(&notice), "--accept-all");
+        let report = ConversionReport {
+            omissions: vec![notice],
+            ..ConversionReport::default()
+        };
+        let error = confirm_with(
+            &Args::default(),
+            &report,
+            None,
+            false,
+            &mut std::io::Cursor::new(Vec::<u8>::new()),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+        assert!(error.message.contains("--accept-all"));
+        confirm_with(
+            &Args {
+                accept_all: true,
+                ..Args::default()
+            },
+            &report,
+            None,
+            false,
+            &mut std::io::Cursor::new(Vec::<u8>::new()),
+            &mut Vec::new(),
+        )
+        .unwrap();
+    }
 }

@@ -2,6 +2,7 @@
 
 use crate::core::CellKind;
 use crate::formats::bdf;
+use crate::formats::bdf::{ParseOptions, ParsedBdf};
 use std::fmt::Write as _;
 
 /// Small deck with stable GRID and element IDs for read/write checks.
@@ -193,5 +194,87 @@ fn deterministic_ids_and_all_linear_families() {
 fn arbitrary_short_inputs_do_not_panic() {
     for byte in 0..=255_u8 {
         let _ = bdf::mesh::read([byte]);
+    }
+}
+
+/// Resource limits reject the particular source shape they are meant to bound.
+#[test]
+fn parser_shape_limits_report_the_offending_line() {
+    let cases = [
+        (
+            "GRID,1\n",
+            ParseOptions {
+                max_line_bytes: 4,
+                ..ParseOptions::default()
+            },
+            Some(1),
+        ),
+        (
+            "GRID,1\nGRID,2\n",
+            ParseOptions {
+                max_lines: 1,
+                ..ParseOptions::default()
+            },
+            None,
+        ),
+        (
+            "GRID,1\nGRID,2\n",
+            ParseOptions {
+                max_cards: 1,
+                ..ParseOptions::default()
+            },
+            Some(2),
+        ),
+        (
+            "GRID,1\n",
+            ParseOptions {
+                max_fields_per_card: 7,
+                ..ParseOptions::default()
+            },
+            Some(1),
+        ),
+        (
+            "GRID,1\n+,2\n",
+            ParseOptions {
+                max_fields_per_card: 8,
+                ..ParseOptions::default()
+            },
+            Some(2),
+        ),
+    ];
+    for (source, options, line) in cases {
+        let error = ParsedBdf::parse_with_options(source.as_bytes(), options).unwrap_err();
+        assert_eq!(error.code, "E_LIMIT", "{source:?}");
+        assert_eq!(error.line, line, "{source:?}");
+    }
+}
+
+/// A continuation label cannot be discarded by another control record or card.
+#[test]
+fn parser_rejects_interrupted_and_unfinished_continuations() {
+    let pending = fixed("GRID", &["1"], 8, "+A");
+    for (source, line) in [
+        (format!("{pending}INCLUDE 'other.bdf'\n"), Some(2)),
+        (format!("{pending}ENDDATA\n"), Some(2)),
+        (format!("{pending}GRID,2\n"), Some(2)),
+        (pending.clone(), None),
+    ] {
+        let error = ParsedBdf::parse(source).unwrap_err();
+        assert_eq!(error.code, "E_CONTINUATION");
+        if let Some(line) = line {
+            assert_eq!(error.line, Some(line));
+        }
+    }
+}
+
+/// Reject ambiguous free-field tails and alternate deck sections early.
+#[test]
+fn parser_rejects_ambiguous_free_fields_and_sections() {
+    for (source, code) in [
+        ("GRID,1,2,3,4,5,6,7,8,9,+A\n", "E_FREE_FIELDS"),
+        ("GRID,1,2,3,4,5,6,7,8,X\n", "E_CONTINUATION"),
+        ("BEGIN BULK\nBEGIN SUPER=1\n", "E_DECK"),
+    ] {
+        assert_eq!(ParsedBdf::parse(source).unwrap_err().code, code);
     }
 }

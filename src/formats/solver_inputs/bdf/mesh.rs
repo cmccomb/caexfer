@@ -29,7 +29,7 @@ pub fn read_from(input: impl Read, max_bytes: usize) -> Result<GeometryProjectio
     let mut bytes = Vec::new();
     input.take(limit as u64).read_to_end(&mut bytes)?;
     ParsedBdf::parse_with_options(
-        bytes,
+        &bytes,
         ParseOptions {
             max_bytes,
             ..ParseOptions::default()

@@ -48,7 +48,6 @@ fn propose_synthetic_zero(input: &Path, source: &mut ReadResult, max_bytes: usiz
         AssumptionKind::SyntheticZero,
         "SYNTHETIC ASSUMPTION: all six displacement components set to float 0.0 for every node; no solver analysis was performed",
     ));
-    source.assumed_zero = true;
     Ok(())
 }
 
@@ -140,7 +139,6 @@ pub fn convert(
         propose_synthetic_zero(input, &mut source, options.max_bytes)?;
     }
 
-    let mut report = None;
     if let Some(companion_path) = &options.mesh_output {
         let companion_format = Format::from_output_path(companion_path)?;
         if companion_format == Format::Op2 {
@@ -149,9 +147,11 @@ pub fn convert(
                 "mesh_output needs a mesh-bearing format",
             ));
         }
+        // The companion needs the mesh and notices, never a copy of result values.
+        let fields = std::mem::take(&mut source.dataset.fields);
         let mut companion_source = source.clone();
-        let excluded = companion_source.dataset.fields.len();
-        companion_source.dataset.fields.clear();
+        let excluded = fields.len();
+        source.dataset.fields = fields;
         if excluded > 0 {
             companion_source.omissions.push(Omission {
                 stage: Stage::Destination,
@@ -159,14 +159,12 @@ pub fn convert(
                 detail: format!("{excluded} result field(s) excluded from companion mesh"),
             });
         }
-        let mut companion_report = None;
-        file_output::create_pair(
+        let (mut report, companion) = file_output::create_pair(
             output,
             |writer| {
                 let produced = conversion::convert(source, target, &engine_options, writer)?;
                 check_acceptance(&produced, options)?;
-                report = Some(produced);
-                Ok(())
+                Ok(produced)
             },
             companion_path,
             |writer| {
@@ -177,29 +175,22 @@ pub fn convert(
                     writer,
                 )?;
                 check_acceptance(&produced, options)?;
-                companion_report = Some(produced);
-                Ok(())
+                Ok(produced)
             },
         )?;
-        let companion =
-            companion_report.ok_or_else(|| Error::new("E_OUTPUT", "no companion report"))?;
-        report
-            .as_mut()
-            .ok_or_else(|| Error::new("E_OUTPUT", "no conversion report"))?
-            .mesh_output = Some(CompanionReport {
+        report.mesh_output = Some(CompanionReport {
             path: companion_path.clone(),
             format: companion_format,
             omissions: companion.omissions,
         });
+        Ok(report)
     } else {
         file_output::create_new(output, |writer| {
             let produced = conversion::convert(source, target, &engine_options, writer)?;
             check_acceptance(&produced, options)?;
-            report = Some(produced);
-            Ok(())
-        })?;
+            Ok(produced)
+        })
     }
-    report.ok_or_else(|| Error::new("E_OUTPUT", "no conversion report"))
 }
 
 #[cfg(test)]
@@ -215,7 +206,6 @@ mod tests {
             dataset: Dataset::default(),
             omissions: Vec::new(),
             generated_point_ids: false,
-            assumed_zero: false,
         }
     }
 

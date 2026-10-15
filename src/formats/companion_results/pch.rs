@@ -513,4 +513,58 @@ mod tests {
             "E_PCH"
         );
     }
+
+    /// Keep malformed metadata and record diagnostics distinct at the boundary.
+    #[test]
+    fn malformed_displacement_records_report_their_specific_failure() {
+        let base = include_str!("../../../tests/fixtures/msc-reference-displacement.pch");
+        let cases = [
+            (
+                "$DISPLACEMENTS",
+                "$DISPLACEMENTS\n$TITLE = next",
+                "empty PCH displacement block",
+            ),
+            (
+                "$REAL OUTPUT",
+                "$OTHER OUTPUT",
+                "empty PCH displacement block",
+            ),
+            ("$SUBCASE ID = 1", "$SUBCASE ID", "missing subcase value"),
+            ("$SUBCASE ID = 1", "$SUBCASE ID =", "missing subcase value"),
+            ("101 G", "bad G", "invalid PCH GRID ID"),
+            ("101 G", "0 G", "PCH GRID ID must be positive"),
+            ("9.994075E-04", "invalid", "invalid PCH real value"),
+            (
+                "-CONT- 0.000000E+00",
+                "-CONT- invalid",
+                "invalid PCH real value",
+            ),
+        ];
+        for (old, new, expected) in cases {
+            let changed = base.replacen(old, new, 1);
+            let error = read(&changed, &mesh(&[101]), None, None).unwrap_err();
+            assert!(error.message.contains(expected), "{new}: {error}");
+        }
+        for source in ["$DISPLACEMENTS\n$REAL OUTPUT\n$SUBCASE ID = 1\n", "\0", "é"] {
+            assert_eq!(
+                read(source, &mesh(&[101]), None, None).unwrap_err().code,
+                "E_PCH"
+            );
+        }
+        let without_rotations = base
+            .lines()
+            .filter(|line| !line.starts_with("-CONT-"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let changed = without_rotations.replace(
+            "101 G 0.000000E+00 9.994075E-04 0.000000E+00",
+            "101 G 0.000000E+00 9.994075E-04 0.000000E+00 bad",
+        );
+        assert!(
+            read(&changed, &mesh(&[101]), None, None)
+                .unwrap_err()
+                .message
+                .contains("invalid PCH sequence")
+        );
+    }
 }

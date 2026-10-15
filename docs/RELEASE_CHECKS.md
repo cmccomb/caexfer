@@ -12,7 +12,8 @@ These checks apply to each candidate release.
    exact source commit. Publish the crate, then verify its recorded source
    commit before tagging and creating the matching GitHub release.
 
-For 0.1.1, verify the MSC Nastran plate fixture provenance, upstream BSD
-terms, and the pyNastran comparison of IDs, topology, and displacement values.
-Run the malformed Exodus header regression and check that measured line coverage
-remains above the 90% floor. Review the draft release notes before publishing.
+For 0.1.2, verify that unsupported INP geometry options fail before output
+installation, the expanded conversion matrix passes, and measured Rust line
+coverage remains above the 90% floor. Review the measured percentage and the
+draft release notes before publishing. The 0.1.1 solver fixture provenance and
+upstream BSD terms remain part of the packaged source checks.

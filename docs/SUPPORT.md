@@ -1,4 +1,8 @@
-# 0.1.1 support contract
+# Format support contract
+
+Run `caexfer --formats` for the executable's read/write list. This document
+defines what each route retains, reports as an omission, or rejects. A listed
+format is a supported subset, not a claim of complete vendor compatibility.
 
 ## BDF geometry contract
 
@@ -209,12 +213,13 @@ Unidata `ncgen`, and exported files have also been read by independent
 
 Read global `*NODE` and supported linear `*ELEMENT, TYPE=...` blocks. Node IDs
 and element IDs remain intact. `*PART`, `*ASSEMBLY`, `*INSTANCE`, `*SYSTEM`, and
-`*INCLUDE`, `*NGEN`, and `*ELGEN` require expansion/scoping and fail. Other
-keyword blocks are omitted from the mesh projection and listed by keyword. The
-writer emits only nodes and elements, without properties, materials, sets, loads,
-steps or results. It is not
-a runnable solver deck. `C3D5` is an Abaqus pyramid type; not every solver
-accepts every emitted element type.
+`*INCLUDE`, `*NGEN`, and `*ELGEN` require expansion/scoping and fail. Options on
+`*NODE` and options beyond `TYPE` on `*ELEMENT` also fail because this reader
+does not project their external records or named selections. Other keyword
+blocks are omitted from the mesh projection and listed by keyword. The writer
+emits only nodes and elements, without properties, materials, sets, loads,
+steps or results. It is not a runnable solver deck. `C3D5` is an Abaqus
+pyramid type; not every solver accepts every emitted element type.
 
 ### CalculiX FRD
 
@@ -260,21 +265,24 @@ in Rust. CI independently rereads written files with pyNastran. Values use float
 nonzero values that would underflow to zero, overflowing values, and node IDs
 outside signed 32-bit range fail. The output OP2 contains no mesh, so retain a
 matching mesh or use `--mesh-out FILE` to create a geometry-only companion in
-BDF, VTU, VTK, MSH, INP, or FRD. The companion carries no result fields; BDF and
-INP companions are not runnable solver decks. Each output is staged before
-either is installed, and existing output paths are never overwritten. Because
-two file installs cannot be atomic, a failed second install can leave the OP2
-file in place. The library retains the completed companion at the staged path
-named in its error so it can be installed after the destination is checked.
-Other fields and a nonzero source
-step number are omitted with reports. A mesh-only BDF/INP cannot generate an OP2
-result from analysis. When converting a BDF or INP mesh to OP2, the CLI proposes
-a **synthetic** static table with T1/T2/T3/R1/R2/R3 all set to float
-`0.0` at every node and requires confirmation or `--accept-synthetic-zero`.
-The OP2 title says `CAEXFER ASSUMED ZERO DISPLACEMENT -
-NOT SOLVER RESULTS`, and the CLI reports the same assumption. This does not
-infer a solution or verify consistency with loads, constraints, or prescribed
-motions in the input. INP users may retain the source mesh or export a companion.
+any writable mesh format (BDF, VTU, VTK, MSH, INP, FRD, STL, SU2, UNV, or
+classic Exodus) when its topology and storage limits permit. The companion
+carries no result fields; BDF and INP companions are not runnable solver decks.
+The public library stages both files and never overwrites existing paths.
+Because two file installs cannot be atomic, a failed second install can leave
+the OP2 file in place. The library retains the completed companion at the
+staged path named in its error so it can be installed after the destination is
+checked. Other fields and a nonzero source step number are omitted with reports.
+
+A mesh-only BDF or INP cannot generate an OP2 result from analysis. When
+converting either mesh to OP2, the CLI proposes a **synthetic** static table
+with T1/T2/T3/R1/R2/R3 all set to float `0.0` at every node and requires
+confirmation or `--accept-synthetic-zero`. Its title says
+`CAEXFER ASSUMED ZERO DISPLACEMENT - NOT SOLVER RESULTS`, and the CLI reports
+the same assumption.
+This does not infer a solution or verify consistency with loads, constraints,
+or prescribed motions in the input. INP users may retain the source mesh or
+export a companion.
 BDF synthetic output requires basic-frame GRID CD=0 so caexfer can reread it
 with that BDF. A rewritten synthetic OP2 retains its provenance title; other
 format projections report that provenance but do not encode it in their fields.
