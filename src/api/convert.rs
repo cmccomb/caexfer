@@ -12,7 +12,11 @@ use crate::file_output;
 use crate::formats::bdf;
 
 /// Add an explicitly proposed all-zero displacement table to a result-free deck.
-fn propose_synthetic_zero(input: &Path, source: &mut ReadResult, max_bytes: usize) -> Result<()> {
+pub(super) fn propose_synthetic_zero(
+    input: &Path,
+    source: &mut ReadResult,
+    max_bytes: usize,
+) -> Result<()> {
     if !matches!(source.format, Format::Bdf | Format::Inp) || !source.dataset.fields.is_empty() {
         return Err(Error::new(
             "E_OP2",

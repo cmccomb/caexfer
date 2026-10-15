@@ -136,7 +136,7 @@ fn present(args: &Args, report: &ConversionReport) -> Result<()> {
 }
 
 /// Encode omission stages and details for the versioned CLI JSON schema.
-fn omissions_json(omissions: &[Omission]) -> String {
+pub(super) fn omissions_json(omissions: &[Omission]) -> String {
     array(omissions.iter().map(|omission| {
         object([
             ("stage", quote(omission.stage.name())),

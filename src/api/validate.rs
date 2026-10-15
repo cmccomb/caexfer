@@ -29,7 +29,7 @@ pub struct ValidationReport {
 
 /// Validate one file against caexfer's supported mesh-and-fields subset.
 ///
-/// Like `caexfer validate`, ordinary mode reports source omissions and
+/// Like `caexfer inspect`, ordinary mode reports source omissions and
 /// unverified assumptions. Strict mode marks the report as failed when any
 /// notice is present. A non-BDF OP2/PCH companion is read under a reported
 /// basic-frame assumption; validation does not accept it for conversion.

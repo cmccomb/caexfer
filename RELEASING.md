@@ -5,12 +5,12 @@ Do not tag a candidate as published until the registry confirms the upload.
 
 1. Confirm the working tree is clean and `main` contains the intended release.
 2. Confirm CI and Coverage passed for that exact commit; Coverage must report at
-   least 90% Rust source-line coverage.
+   least 95% distinct Rust source-line coverage.
 3. Run `cargo publish --dry-run` without `--allow-dirty`. Check the packaged
    file list with `cargo package --list` and inspect the README, license files,
    source files, and fixture provenance included in the archive.
-4. Prepare version-specific GitHub Release notes; for the 0.1.2 candidate, use
-   [the draft](docs/RELEASE_NOTES_0.1.2.md). Confirm that the planned version
+4. Prepare version-specific GitHub Release notes; for the 0.2.0 candidate, use
+   [the draft](docs/RELEASE_NOTES_0.2.0.md). Confirm that the planned version
    is not already published and that the publishing account has a verified
    email and a suitable token.
 5. Publish with `cargo publish`, then independently confirm that the version

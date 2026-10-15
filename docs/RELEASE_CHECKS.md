@@ -12,8 +12,9 @@ These checks apply to each candidate release.
    exact source commit. Publish the crate, then verify its recorded source
    commit before tagging and creating the matching GitHub release.
 
-For 0.1.2, verify that unsupported INP geometry options fail before output
-installation, the expanded conversion matrix passes, and measured Rust line
-coverage remains above the 90% floor. Review the measured percentage and the
-draft release notes before publishing. The 0.1.1 solver fixture provenance and
-upstream BSD terms remain part of the packaged source checks.
+For 0.2.0, retain the v0.1.2 INP, interrupted-output, conversion-matrix, and
+malformed-input regressions. Verify the MSC Nastran plate fixture provenance,
+upstream BSD terms, and pyNastran comparison of IDs, topology, and displacement
+values. Run the independent VTK/VTI exchange checks, confirm the voxel mesh
+limits, and measure distinct Rust source-line coverage above the 95% floor.
+Review the draft release notes before publishing.

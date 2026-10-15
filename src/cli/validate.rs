@@ -40,6 +40,7 @@ pub(super) fn run_validate(args: &Args) -> Result<u8> {
         for omission in &report.omissions {
             emit(&format!("Omission: {}", omission.detail))?;
         }
+        emit("Source only; no destination checked.")?;
     }
     Ok(u8::from(!report.passed))
 }

@@ -3,7 +3,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-use caexfer::{Error, Format, MshVersion, Result};
+use caexfer::{Error, Format, InfillShape, MshVersion, Result};
 
 /// Parsed CLI command, paths, and explicitly supplied option flags.
 #[derive(Debug, Default)]
@@ -13,6 +13,7 @@ pub(super) struct Args {
     pub(super) help_requested: bool,
     pub(super) paths: Vec<PathBuf>,
     pub(super) json: bool,
+    pub(super) preview: bool,
     pub(super) strict: bool,
     pub(super) overwrite: bool,
     pub(super) accept_omissions: bool,
@@ -27,7 +28,11 @@ pub(super) struct Args {
     pub(super) step: Option<usize>,
     pub(super) max_bytes: Option<usize>,
     pub(super) msh_version: Option<MshVersion>,
-    pub(super) voxel_size: Option<f64>,
+    pub(super) match_grid: Option<PathBuf>,
+    pub(super) infill_shape: Option<InfillShape>,
+    pub(super) infill_unit_size: Option<f64>,
+    pub(super) surface: bool,
+    pub(super) gmsh: Option<PathBuf>,
     pub(super) smooth_iterations: Option<usize>,
 }
 
@@ -118,7 +123,7 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             }),
             Some(topic) if raw.len() == 2 => {
                 let topic = text(topic)?;
-                if !matches!(topic, "validate" | "convert") {
+                if !matches!(topic, "formats" | "inspect" | "convert") {
                     return Err(usage(format!("unknown help topic {topic:?}; use --help")));
                 }
                 Ok(Args {
@@ -136,16 +141,19 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             ..Args::default()
         });
     }
-    if matches!(command.as_str(), "-f" | "--formats") {
-        if raw.len() != 1 {
-            return Err(usage("--formats takes no options or paths"));
-        }
+    if command == "formats" {
+        let help_requested = match raw.get(1) {
+            None => false,
+            Some(option) if raw.len() == 2 && matches!(text(option)?, "-h" | "--help") => true,
+            Some(_) => return Err(usage("formats takes no paths or options except --help")),
+        };
         return Ok(Args {
-            command: "formats".into(),
+            command,
+            help_requested,
             ..Args::default()
         });
     }
-    if !matches!(command.as_str(), "validate" | "convert") {
+    if !matches!(command.as_str(), "inspect" | "convert") {
         return Err(usage(format!("unknown command {command:?}; use --help")));
     }
     // A command name alone requests its help, like the bare executable.
@@ -185,6 +193,8 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
         // non-options are collected as OS-native paths.
         if options && (arg == "--json" || arg == "-j") {
             set_flag(&mut args.json, "--json")?;
+        } else if options && arg == "--preview" {
+            set_flag(&mut args.preview, "--preview")?;
         } else if options && (arg == "--strict" || arg == "-s") {
             set_flag(&mut args.strict, "--strict")?;
         } else if options && arg == "--overwrite" {
@@ -224,16 +234,33 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
                 _ => Err(usage("--msh-version requires 2.2 or 4.1")),
             })?;
             index += 1;
-        } else if options && arg == "--voxel-size" {
-            set_option(&mut args.voxel_size, "--voxel-size", || {
+        } else if options && arg == "--infill-shape" {
+            set_option(&mut args.infill_shape, "--infill-shape", || {
+                InfillShape::parse(value(1)?)
+            })?;
+            index += 1;
+        } else if options && arg == "--infill-unit-size" {
+            set_option(&mut args.infill_unit_size, "--infill-unit-size", || {
                 let size: f64 = value(1)?
                     .parse()
-                    .map_err(|_| usage("--voxel-size requires a positive finite number"))?;
+                    .map_err(|_| usage("--infill-unit-size requires a positive finite number"))?;
                 if !size.is_finite() || size <= 0.0 {
-                    return Err(usage("--voxel-size requires a positive finite number"));
+                    return Err(usage(
+                        "--infill-unit-size requires a positive finite number",
+                    ));
                 }
                 Ok(size)
             })?;
+            index += 1;
+        } else if options && arg == "--match-grid" {
+            set_option(&mut args.match_grid, "--match-grid", || {
+                Ok(PathBuf::from(value(1)?))
+            })?;
+            index += 1;
+        } else if options && arg == "--surface" {
+            set_flag(&mut args.surface, "--surface")?;
+        } else if options && arg == "--gmsh" {
+            set_option(&mut args.gmsh, "--gmsh", || Ok(PathBuf::from(value(1)?)))?;
             index += 1;
         } else if options && arg == "--smooth-iterations" {
             set_option(&mut args.smooth_iterations, "--smooth-iterations", || {
@@ -279,18 +306,24 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
 
     // Command arity and cross-option rules are checked after collection so
     // flags may appear before or after path arguments.
-    let expected = if args.command == "validate" { 1 } else { 2 };
+    let expected = if args.command == "inspect" { 1 } else { 2 };
     if args.paths.len() != expected {
         return Err(usage(format!(
             "{} expects {expected} path argument(s)",
             args.command
         )));
     }
-    if args.strict && args.command != "validate" {
-        return Err(usage("--strict is only for validate"));
+    if args.strict && args.command != "inspect" {
+        return Err(usage("--strict is only for inspect"));
+    }
+    if args.preview && args.command != "convert" {
+        return Err(usage("--preview is only for convert"));
     }
     if args.overwrite && args.command != "convert" {
         return Err(usage("--overwrite is only for convert"));
+    }
+    if args.preview && args.overwrite {
+        return Err(usage("--overwrite cannot be combined with --preview"));
     }
     if (args.accept_omissions
         || args.accept_basic_frame
@@ -300,6 +333,15 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
         && args.command != "convert"
     {
         return Err(usage("conversion acceptance flags are only for convert"));
+    }
+    if args.preview
+        && (args.accept_omissions
+            || args.accept_basic_frame
+            || args.accept_zero_rotations
+            || args.accept_synthetic_zero
+            || args.accept_all)
+    {
+        return Err(usage("acceptance flags cannot be combined with --preview"));
     }
     let op2_output = is_op2_output(&args);
     if args.mesh_out.is_some() && !op2_output {
@@ -333,8 +375,39 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
             return Err(usage("--msh-version applies only to MSH output"));
         }
     }
-    if args.voxel_size.is_some() && args.command != "convert" {
-        return Err(usage("--voxel-size applies only to convert"));
+    if args.infill_shape.is_some() != args.infill_unit_size.is_some() {
+        return Err(usage(
+            "--infill-shape and --infill-unit-size must be used together",
+        ));
+    }
+    if args.infill_shape.is_some() && args.command != "convert" {
+        return Err(usage("--infill-shape applies only to convert"));
+    }
+    if args.infill_shape.is_some() && args.surface {
+        return Err(usage("--infill-shape cannot be combined with --surface"));
+    }
+    if args.gmsh.is_some()
+        && args
+            .infill_shape
+            .is_some_and(|shape| shape != InfillShape::Tet4)
+    {
+        return Err(usage("--gmsh applies only to tet4 infill"));
+    }
+    if args.surface && args.command != "convert" {
+        return Err(usage("--surface applies only to convert"));
+    }
+    if args.gmsh.is_some() && args.infill_shape != Some(InfillShape::Tet4) {
+        return Err(usage("--gmsh requires --infill-shape tet4"));
+    }
+    if args.match_grid.is_some() && args.command != "convert" {
+        return Err(usage("--match-grid applies only to convert"));
+    }
+    if args.match_grid.is_some()
+        && (args.infill_shape.is_some() || args.surface || args.gmsh.is_some())
+    {
+        return Err(usage(
+            "--match-grid supplies hex8 infill size and cannot use other geometry options",
+        ));
     }
     if args.smooth_iterations.is_some()
         && (args.command != "convert"
@@ -364,9 +437,98 @@ mod tests {
     /// Reject repeated option flags so command intent is unambiguous.
     #[test]
     fn duplicate_option_rejected() {
-        assert!(args(&["validate", "x.bdf", "--json", "--json"]).is_err());
-        assert!(args(&["validate", "x.bdf", "--json", "-j"]).is_err());
-        assert!(args(&["validate", "x.bdf", "--strict", "-s"]).is_err());
+        assert!(args(&["inspect", "x.bdf", "--json", "--json"]).is_err());
+        assert!(args(&["inspect", "x.bdf", "--json", "-j"]).is_err());
+        assert!(args(&["inspect", "x.bdf", "--strict", "-s"]).is_err());
+        assert!(args(&["convert", "x.bdf", "y.vtu", "--preview", "--preview"]).is_err());
+        assert!(args(&["convert", "x.vtu", "y.vtu", "--surface", "--surface"]).is_err());
+    }
+
+    /// Geometry projection switches are conversion-only and mutually exclusive.
+    #[test]
+    fn geometry_projection_options_are_scoped() {
+        assert!(
+            args(&["convert", "x.vtu", "y.vtu", "--surface"])
+                .unwrap()
+                .surface
+        );
+        assert!(args(&["inspect", "x.vtu", "--surface"]).is_err());
+        assert!(
+            args(&[
+                "convert",
+                "x.vtu",
+                "y.vtu",
+                "--surface",
+                "--infill-shape",
+                "hex8",
+                "--infill-unit-size",
+                "1"
+            ])
+            .is_err()
+        );
+        for removed in ["--voxel-size", "--tetrahedralize", "--tet-size"] {
+            assert!(args(&["convert", "x.vtu", "y.vtu", removed, "1"]).is_err());
+        }
+    }
+
+    #[test]
+    fn infill_shape_and_size_are_paired_and_exclusive() {
+        for shape in ["tet4", "hex8", "wedge6", "pyramid5"] {
+            let parsed = args(&[
+                "convert",
+                "x.stl",
+                "y.vtu",
+                "--infill-shape",
+                shape,
+                "--infill-unit-size",
+                "0.5",
+            ])
+            .unwrap();
+            assert!(parsed.infill_shape.is_some());
+            assert_eq!(parsed.infill_unit_size, Some(0.5));
+        }
+        assert!(args(&["convert", "x.stl", "y.vtu", "--infill-shape", "hex8"]).is_err());
+        assert!(args(&["convert", "x.stl", "y.vtu", "--infill-unit-size", "1"]).is_err());
+        assert!(
+            args(&[
+                "convert",
+                "x.stl",
+                "y.vtu",
+                "--infill-shape",
+                "hex8",
+                "--infill-unit-size",
+                "0"
+            ])
+            .is_err()
+        );
+        assert!(
+            args(&[
+                "convert",
+                "x.stl",
+                "y.vtu",
+                "--infill-shape",
+                "hex8",
+                "--infill-unit-size",
+                "1",
+                "--gmsh",
+                "gmsh"
+            ])
+            .is_err()
+        );
+        assert!(
+            args(&[
+                "convert",
+                "x.stl",
+                "y.vtu",
+                "--infill-shape",
+                "tet4",
+                "--infill-unit-size",
+                "1",
+                "--gmsh",
+                "gmsh"
+            ])
+            .is_ok()
+        );
     }
 
     /// Reject options that do not apply to the selected command or format.
@@ -376,7 +538,7 @@ mod tests {
         assert!(args(&["convert", "x.bdf", "x.vtu", "-s"]).is_err());
         assert!(
             args(&[
-                "validate",
+                "inspect",
                 "x.op2",
                 "--mesh",
                 "x.vtu",
@@ -389,8 +551,8 @@ mod tests {
     /// Short spellings follow the same command scopes as their long forms.
     #[test]
     fn short_json_and_strict_options() {
-        let validate = args(&["validate", "x.bdf", "-j", "-s"]).unwrap();
-        assert!(validate.json && validate.strict);
+        let inspect = args(&["inspect", "x.bdf", "-j", "-s"]).unwrap();
+        assert!(inspect.json && inspect.strict);
         let convert = args(&["convert", "x.bdf", "x.vtu", "-j"]).unwrap();
         assert!(convert.json);
     }
@@ -452,17 +614,46 @@ mod tests {
     }
 
     #[test]
-    fn voxel_size_requires_positive_finite_conversion_value() {
+    fn infill_unit_size_requires_positive_finite_conversion_value() {
         assert_eq!(
-            args(&["convert", "shape.stl", "shape.vti", "--voxel-size", "0.5"])
-                .unwrap()
-                .voxel_size,
+            args(&[
+                "convert",
+                "shape.stl",
+                "shape.vti",
+                "--infill-shape",
+                "hex8",
+                "--infill-unit-size",
+                "0.5"
+            ])
+            .unwrap()
+            .infill_unit_size,
             Some(0.5)
         );
         for bad in ["0", "-1", "NaN", "inf"] {
-            assert!(args(&["convert", "shape.stl", "shape.vox", "--voxel-size", bad]).is_err());
+            assert!(
+                args(&[
+                    "convert",
+                    "shape.stl",
+                    "shape.vox",
+                    "--infill-shape",
+                    "hex8",
+                    "--infill-unit-size",
+                    bad
+                ])
+                .is_err()
+            );
         }
-        assert!(args(&["validate", "shape.vti", "--voxel-size", "1"]).is_err());
+        assert!(
+            args(&[
+                "inspect",
+                "shape.vti",
+                "--infill-shape",
+                "hex8",
+                "--infill-unit-size",
+                "1"
+            ])
+            .is_err()
+        );
     }
 
     #[test]
@@ -501,14 +692,14 @@ mod tests {
             ])
             .is_err()
         );
-        assert!(args(&["validate", "shape.stl", "--smooth-iterations", "10"]).is_err());
+        assert!(args(&["inspect", "shape.stl", "--smooth-iterations", "10"]).is_err());
     }
 
     /// Treat paths after -- as paths even when they begin with a hyphen.
     #[test]
     fn double_dash_supports_dash_path() {
         assert_eq!(
-            args(&["validate", "--", "-mesh.bdf"]).unwrap().paths[0],
+            args(&["inspect", "--", "-mesh.bdf"]).unwrap().paths[0],
             PathBuf::from("-mesh.bdf")
         );
     }
@@ -525,15 +716,19 @@ mod tests {
         assert!(args(&["convert", "only.bdf", "--accept-all"]).is_err());
     }
 
-    /// The global formats switch takes no additional options or paths.
+    /// The formats command takes only an optional help switch.
     #[test]
-    fn format_report_is_a_global_switch() {
-        assert_eq!(args(&["-f"]).unwrap().command, "formats");
-        assert!(args(&["--formats", "--json"]).is_err());
-        assert!(args(&["--json", "-f"]).is_err());
-        assert!(args(&["-f", "--formats"]).is_err());
-        assert!(args(&["--formats", "x.bdf"]).is_err());
-        assert!(args(&["formats"]).is_err());
+    fn formats_command_has_no_paths_or_data_options() {
+        let report = args(&["formats"]).unwrap();
+        assert_eq!(report.command, "formats");
+        assert!(!report.help_requested);
+        assert!(args(&["formats", "--help"]).unwrap().help_requested);
+        assert!(args(&["formats", "-h"]).unwrap().help_requested);
+        assert!(args(&["help", "formats"]).unwrap().help_requested);
+        assert!(args(&["formats", "--json"]).is_err());
+        assert!(args(&["formats", "x.bdf"]).is_err());
+        assert!(args(&["-f"]).is_err());
+        assert!(args(&["--formats"]).is_err());
     }
 
     /// Constrain synthetic zero displacement to its explicit OP2 output path.

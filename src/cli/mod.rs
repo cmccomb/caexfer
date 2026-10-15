@@ -7,6 +7,7 @@ mod convert;
 mod help;
 mod json;
 mod output;
+mod preview;
 mod run;
 mod validate;
 

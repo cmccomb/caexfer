@@ -24,9 +24,11 @@ mod formats;
 mod api;
 mod file_output;
 
-pub use api::{ValidationReport, convert, validate};
+pub use api::{PreviewReport, ValidationReport, convert, preview, validate};
 pub use conversion::{
-    AssumptionKind, CompanionReport, ConversionReport, Format, Omission, Options, Stage,
+    AssumptionKind, CompanionReport, ConversionReport, Format, InfillShape, Omission, Options,
+    Stage,
 };
+pub use core::VoxelEstimate;
 pub use core::{Error, Result};
 pub use formats::msh::Version as MshVersion;

@@ -38,7 +38,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="caexfer-interop-") as temp:
         temp = Path(temp)
         # Validate the projected-data JSON contract before conversion.
-        validation = json.loads(run("validate", "examples/plate.bdf", "--json").stdout)
+        validation = json.loads(run("inspect", "examples/plate.bdf", "--json").stdout)
         assert validation["schema_version"] == 1
         assert (validation["points"], validation["cells"], validation["fields"]) == (4, 1, 0)
         assert validation["format"] == "bdf" and validation["omissions"]

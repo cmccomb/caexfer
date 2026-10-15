@@ -3,15 +3,16 @@
 `caexfer` is one Rust package with a library and a CLI. It requires Rust 1.86
 or newer. Add the published library with `cargo add caexfer`.
 
-The public library has two file operations:
+The public library has three file operations:
 
 | Operation | Result |
 | --- | --- |
-| `caexfer::validate(input, &options)` | Supported-subset counts, source omissions, and a `passed` verdict |
+| `caexfer::validate(input, &options)` | Source subset counts, source notices, and a `passed` verdict |
 | `caexfer::convert(input, output, &options)` | A newly installed output file and a typed conversion report |
+| `caexfer::preview(input, output, &options)` | Destination-specific dry projection or a grid work estimate; no output file |
 
 The `core`, `conversion`, and format adapter modules are implementation details.
-Both operations infer formats from filename extensions; set `Options.input_format`
+All three operations infer formats from filename extensions; set `Options.input_format`
 when the input suffix is ambiguous. The output suffix chooses the writer.
 `Format`, `MshVersion`, `Options`, report types, and `Error` are public support
 types. See [format limits](SUPPORT.md) for what each route can carry.
@@ -37,7 +38,9 @@ assumptions. For OP2/PCH with a non-BDF companion mesh, validation reports an
 unverified basic-frame assumption without requiring acceptance. Set
 `Options.strict = true` to make any notice set `report.passed = false`.
 Parse, I/O, size-limit, and unsafe-projection failures return an `Error`. A
-passing report does not validate a full solver model.
+passing report does not validate a full solver model or establish that a
+particular destination can represent the source. Use `preview(input, output,
+&options)` for a proposed route.
 
 ## Convert a file
 
@@ -69,6 +72,61 @@ requires its matching option: `assume_basic_frame`, `zero_missing_rotations`, or
 `accept_synthetic_zero`. `accept_all` accepts every notice. These options do not
 override parsing, coordinate-system, representability, or I/O errors.
 
+For voxel output, `ConversionReport.voxel_grid` contains the grid dimensions
+and occupied cell count. Mesh or STL input needs `infill_shape: Some(InfillShape::Hex8)`
+and an explicit `infill_unit_size`;
+VTI/VOX input already defines a grid. For example:
+
+```rust
+use caexfer::{InfillShape, Options, Result, convert};
+
+fn main() -> Result<()> {
+    let report = convert("examples/donut.stl", "donut.vti", &Options {
+        infill_shape: Some(InfillShape::Hex8),
+        infill_unit_size: Some(0.25),
+        accept_omissions: true,
+        ..Options::default()
+    })?;
+    assert_eq!(report.voxel_grid, Some(([26, 26, 7], 1859)));
+    convert("donut.vti", "donut-roundtrip.stl", &Options {
+        accept_omissions: true,
+        ..Options::default()
+    })?;
+    Ok(())
+}
+```
+
+Voxel grids carry occupancy, not interpolated solver values. Converting to VOX
+also omits physical origin and spacing; check `report.omissions` before using
+the output as geometry at a particular scale.
+
+`Options.match_grid` can name a supported VTI occupancy file. Its origin,
+spacing, and dimensions become the mesh voxelization grid; infill flags must
+be omitted. The source surface must fit entirely within the reference bounds.
+The reference occupancy values are not copied. `preview` checks this geometry
+and estimates cell count and maximum sampling work without building occupancy:
+
+```rust
+use caexfer::{InfillShape, Options, Result, preview};
+
+fn main() -> Result<()> {
+    let plan = preview("examples/donut.stl", "donut.vti", &Options {
+        infill_shape: Some(InfillShape::Hex8),
+        infill_unit_size: Some(0.25),
+        ..Options::default()
+    })?;
+    let grid = plan.voxel_estimate.expect("voxel plan");
+    println!("{} cells, up to {} triangle checks", grid.cells, grid.triangle_checks);
+    Ok(())
+}
+```
+
+For other conversion routes, preview runs the same writer into a discard
+stream and returns exact source and destination notices without installing a
+file. Voxel previews stop before ray sampling and return source notices only;
+`PreviewReport.complete` distinguishes these cases. Check
+`PreviewReport.limit` for resolution or VOX-axis limits.
+
 ## Options for special routes
 
 | Option | Purpose |
@@ -78,7 +136,11 @@ override parsing, coordinate-system, representability, or I/O errors.
 | `assume_basic_frame` | Accept basic-frame coordinates and displacements for conversion with a non-BDF companion |
 | `subcase`, `step` | Select an OP2/PCH result; `step` also selects an FRD or Exodus step |
 | `msh_version` | Select MSH 2.2 output; default is 4.1 |
-| `voxel_size` | Positive cubic cell size for mesh/STL to VTI/VOX or STL to a Hex8 volume mesh |
+| `infill_shape`, `infill_unit_size` | Paired meshing options: `InfillShape::{Tet4, Hex8, Wedge6, Pyramid5}` and a positive size in source units. Tet4 uses Gmsh; the others split occupied cubes on a size-spaced grid. Mesh-to-VTI/VOX requires `Hex8`. |
+| `match_grid` | Existing VTI grid to supply origin, spacing, and dimensions for Hex8 mesh voxelization |
+| `smooth_iterations` | Number of surface smoothing cycles (1–50) for VTI/VOX to STL; default 0 leaves voxel faces exact |
+| `surface` | Extract external triangles from a volume mesh before writing a mesh format |
+| `gmsh` | Optional path to the Gmsh executable; default is `gmsh` on `PATH` |
 | `max_bytes` | Bound the input and companion mesh reads; default is 256 MiB |
 | `zero_missing_rotations` | Accept float zero for missing OP2 R1/R2/R3 components |
 | `accept_synthetic_zero` | Accept a labeled all-zero OP2 result from result-free BDF or INP geometry |

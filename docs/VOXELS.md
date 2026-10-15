@@ -16,7 +16,8 @@ unrelated collection of hexahedra.
 ## Mesh voxelization
 
 Convert supported closed surface or volume geometry to a regular grid using
-an explicit voxel size. The output records geometry occupancy on cells, not
+`--infill-shape hex8 --infill-unit-size N`, or use `--match-grid FILE` to
+sample on a reference VTI grid. The output records geometry occupancy on cells, not
 interpolated solver results. Report source result fields that the voxelization
 does not carry, and reject geometry whose inside and outside cannot be
 determined reliably. Bounds, indexing, and boundary treatment must be
