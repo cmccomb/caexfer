@@ -1125,7 +1125,7 @@ fn op2_requires_exactly_one_displacement_field() {
         &mut output,
     )
     .unwrap();
-    assert!(!output.is_empty());
+    assert_ne!(output, []);
     source.dataset.fields.push(displacement);
     assert_eq!(
         conversion::convert(source, Format::Op2, &Options::default(), &mut Vec::new())

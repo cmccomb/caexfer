@@ -210,8 +210,8 @@ fn empty_msh22_sections_are_preserved() {
     let source =
         "$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$Nodes\n0\n$EndNodes\n$Elements\n0\n$EndElements\n";
     let dataset = read(source).unwrap();
-    assert!(dataset.mesh.points.is_empty());
-    assert!(dataset.mesh.cells.is_empty());
+    assert_eq!(dataset.mesh.points, []);
+    assert_eq!(dataset.mesh.cells, []);
 }
 
 /// Malformed physical metadata must fail before attaching misleading groups.

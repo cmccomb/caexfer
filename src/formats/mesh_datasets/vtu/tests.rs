@@ -264,7 +264,7 @@ fn reserved_identity_array_names_are_rejected_before_output() {
                 .message
                 .contains("reserved ID array")
         );
-        assert!(output.is_empty());
+        assert_eq!(output, []);
     }
 }
 
