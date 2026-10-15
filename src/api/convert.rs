@@ -204,6 +204,7 @@ mod tests {
         ReadResult {
             format,
             dataset: Dataset::default(),
+            voxel_grid: None,
             omissions: Vec::new(),
             generated_point_ids: false,
         }
