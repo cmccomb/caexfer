@@ -1,4 +1,4 @@
-# caexfer 0.1.2 release notes (draft)
+# caexfer 0.1.2 release notes
 
 This maintenance update simplifies internal conversion state without changing
 the public API or supported formats. Staged output now returns its conversion
