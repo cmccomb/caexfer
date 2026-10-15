@@ -257,7 +257,9 @@ fn malformed_physical_names_and_entities_are_rejected() {
 /// Reject inconsistent MSH 4.1 block metadata before assigning identity.
 #[test]
 fn msh41_rejects_inconsistent_entity_node_and_element_blocks() {
-    let base = include_str!("../../../../tests/fixtures/named-boundary.msh");
+    // Git may check out text fixtures with CRLF on Windows; mutation anchors
+    // describe logical MSH lines rather than checkout line endings.
+    let base = include_str!("../../../../tests/fixtures/named-boundary.msh").replace("\r\n", "\n");
     for (old, new, expected) in [
         (
             "0 1 1 0\n1 0",
