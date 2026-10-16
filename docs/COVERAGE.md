@@ -3,7 +3,7 @@
 The coverage workflow measures Rust source lines executed by unit and
 integration tests, independent CLI checks, and the conversion matrix with
 pyNastran as an independent OP2 reader. It enforces a
-**95% distinct source-line coverage floor**. Each physical Rust file/line pair
+**98% distinct source-line coverage floor**. Each physical Rust file/line pair
 in the LCOV `DA` records counts once, even when a generic function has multiple
 compiled instantiations. The raw LLVM JSON summary remains available and may
 show a different percentage because it counts those instantiations. The README
@@ -32,4 +32,4 @@ running the script.
 
 The script writes `target/coverage-source-lines.json`, `target/coverage.json`,
 and `target/coverage.lcov` and fails when distinct source-line coverage falls
-below 95%. The latest workflow run contains the current measurement.
+below 98%. The latest workflow run contains the current measurement.

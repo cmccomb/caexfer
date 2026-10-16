@@ -4,7 +4,7 @@
 # Run from the repository root after installing cargo-llvm-cov. The interpreter
 # is used only to verify Rust-written OP2 files; the crate has no Python runtime.
 # Build artifacts and raw profiles use a temporary Cargo target directory.
-# Reports are written to target/; distinct Rust source lines must reach 95%.
+# Reports are written to target/; distinct Rust source lines must reach 98%.
 set -euo pipefail
 
 if (($# != 1)); then
@@ -43,4 +43,4 @@ mkdir -p target
 cargo llvm-cov report --lcov --output-path target/coverage.lcov
 cargo llvm-cov report --json --output-path target/coverage.json
 python3 scripts/test_source_line_coverage.py
-python3 scripts/source_line_coverage.py target/coverage.lcov target/coverage-source-lines.json --min-percent 95
+python3 scripts/source_line_coverage.py target/coverage.lcov target/coverage-source-lines.json --min-percent 98

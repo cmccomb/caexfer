@@ -39,7 +39,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("lcov", type=Path)
     parser.add_argument("summary", type=Path)
-    parser.add_argument("--min-percent", type=float, default=95.0)
+    parser.add_argument("--min-percent", type=float, default=98.0)
     args = parser.parse_args()
     try:
         covered, count = measure(args.lcov)

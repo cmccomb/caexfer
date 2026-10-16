@@ -5,7 +5,7 @@ Do not tag a candidate as published until the registry confirms the upload.
 
 1. Confirm the working tree is clean and `main` contains the intended release.
 2. Confirm CI and Coverage passed for that exact commit; Coverage must report at
-   least 95% distinct Rust source-line coverage.
+   least 98% distinct Rust source-line coverage.
 3. Run `cargo publish --dry-run` without `--allow-dirty`. Check the packaged
    file list with `cargo package --list` and inspect the README, license files,
    source files, and fixture provenance included in the archive.

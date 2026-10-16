@@ -26,6 +26,11 @@ flags are removed.
 The CLI now uses `caexfer formats` for the capability listing. The former
 `-f` and `--formats` switches are removed.
 
+Regression checks now bound the donut voxel round trip's enclosed-volume drift
+and verify its closed torus surface. The release gate also checks unit-cube
+Tet4 volume and the extracted STL shell with Gmsh, alongside at least 98%
+distinct Rust source-line coverage.
+
 This branch builds on the published v0.1.2 maintenance release, including its
 stricter INP parsing, paired-output recovery, and expanded regression suite.
 The Exodus classic-header allocation guard and MSC Nastran plate fixture remain

@@ -2,7 +2,7 @@
 # Render distinct Rust source-line coverage as an SVG badge.
 # Usage: bash scripts/coverage_badge.sh SOURCE_LINE_JSON OUTPUT_SVG
 # Requires jq and awk. Reject malformed totals; write the SVG only after the
-# totals are valid. The green state follows the repository's 95% coverage gate.
+# totals are valid. The green state follows the repository's 98% coverage gate.
 set -euo pipefail
 
 if (($# != 2)); then
@@ -28,7 +28,7 @@ read -r covered total <<<"$totals"
 export LC_ALL=C
 value=$(awk -v covered="$covered" -v total="$total" 'BEGIN {printf "%.1f%%", 100 * covered / total}')
 # Use the same threshold as scripts/coverage.sh, independent of rounding.
-if awk -v covered="$covered" -v total="$total" 'BEGIN {exit (100 * covered / total >= 95) ? 0 : 1}'; then
+if awk -v covered="$covered" -v total="$total" 'BEGIN {exit (100 * covered / total >= 98) ? 0 : 1}'; then
     state_top='#34D058'
     state_bottom='#28A745'
 else

@@ -428,9 +428,6 @@ pub fn convert(
     match target {
         Format::Vti | Format::Vox => {
             let grid = if let Some(grid) = &source.voxel_grid {
-                if options.infill_shape.is_some() {
-                    return Err(Error::new("E_USAGE", "infill options require mesh input"));
-                }
                 grid.clone()
             } else {
                 let spacing = options

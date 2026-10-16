@@ -16,5 +16,9 @@ For 0.2.0, retain the v0.1.2 INP, interrupted-output, conversion-matrix, and
 malformed-input regressions. Verify the MSC Nastran plate fixture provenance,
 upstream BSD terms, and pyNastran comparison of IDs, topology, and displacement
 values. Run the independent VTK/VTI exchange checks, confirm the voxel mesh
-limits, and measure distinct Rust source-line coverage above the 95% floor.
+limits, and measure distinct Rust source-line coverage above the 98% floor.
+Keep the donut voxel round-trip regression within 3% enclosed-volume drift,
+with a closed triangle surface and the torus hole intact. Check that the
+tetrahedral mesher boundary rejects bad output and preserves the unit-cube
+volume in its known-mesh contract test.
 Review the draft release notes before publishing.

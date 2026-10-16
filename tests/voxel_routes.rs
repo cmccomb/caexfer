@@ -1,9 +1,10 @@
 //! Public file API checks for voxel inputs, outputs, and rejected metadata.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use caexfer::{InfillShape, Options, convert, validate};
+use caexfer::{InfillShape, Options, convert, preview, validate};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -49,6 +50,106 @@ fn grid_input(scratch: &Scratch) -> PathBuf {
     )
 }
 
+/// Measure binary STL independently of caexfer's readers and writers.
+fn stl_surface_metrics(path: &Path) -> (f64, [f64; 3], [f64; 3], i64, bool) {
+    let bytes = std::fs::read(path).unwrap();
+    let triangles = u32::from_le_bytes(bytes[80..84].try_into().unwrap()) as usize;
+    assert_eq!(bytes.len(), 84 + triangles * 50);
+    let mut vertices = BTreeSet::new();
+    let mut edges = BTreeMap::<([u32; 3], [u32; 3]), usize>::new();
+    let mut minimum = [f64::INFINITY; 3];
+    let mut maximum = [f64::NEG_INFINITY; 3];
+    let mut signed_volume = 0.0;
+    for facet in bytes[84..].chunks_exact(50) {
+        let raw_points: [[f32; 3]; 3] = std::array::from_fn(|corner| {
+            std::array::from_fn(|axis| {
+                let offset = 12 + corner * 12 + axis * 4;
+                f32::from_le_bytes(facet[offset..offset + 4].try_into().unwrap())
+            })
+        });
+        let points = raw_points.map(|point| point.map(f64::from));
+        let keys = raw_points
+            .map(|point| point.map(|value| if value == 0.0 { 0 } else { value.to_bits() }));
+        for (point, key) in points.iter().zip(keys) {
+            vertices.insert(key);
+            for axis in 0..3 {
+                minimum[axis] = minimum[axis].min(point[axis]);
+                maximum[axis] = maximum[axis].max(point[axis]);
+            }
+        }
+        for (a, b) in [(0, 1), (1, 2), (2, 0)] {
+            let edge = if keys[a] < keys[b] {
+                (keys[a], keys[b])
+            } else {
+                (keys[b], keys[a])
+            };
+            *edges.entry(edge).or_default() += 1;
+        }
+        let [a, b, c] = points;
+        signed_volume += (a[0] * (b[1] * c[2] - b[2] * c[1])
+            + a[1] * (b[2] * c[0] - b[0] * c[2])
+            + a[2] * (b[0] * c[1] - b[1] * c[0]))
+            / 6.0;
+    }
+    (
+        signed_volume,
+        minimum,
+        maximum,
+        i64::try_from(vertices.len()).unwrap() - i64::try_from(edges.len()).unwrap()
+            + i64::try_from(triangles).unwrap(),
+        edges.values().all(|&count| count == 2),
+    )
+}
+
+#[test]
+fn donut_voxel_round_trip_preserves_volume_and_torus_topology() {
+    let scratch = Scratch::new();
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/donut.stl");
+    let occupancy = scratch.path("donut.vti");
+    let shell = scratch.path("donut-roundtrip.stl");
+    let accepted = Options {
+        accept_all: true,
+        ..Options::default()
+    };
+    convert(
+        &source,
+        &occupancy,
+        &Options {
+            infill_shape: Some(InfillShape::Hex8),
+            infill_unit_size: Some(0.25),
+            ..accepted.clone()
+        },
+    )
+    .unwrap();
+    convert(&occupancy, &shell, &accepted).unwrap();
+
+    let (original_volume, original_min, original_max, original_euler, original_closed) =
+        stl_surface_metrics(&source);
+    let (sampled_volume, sampled_min, sampled_max, sampled_euler, sampled_closed) =
+        stl_surface_metrics(&shell);
+    assert!(
+        original_closed && sampled_closed,
+        "surface has open or nonmanifold edges"
+    );
+    assert_eq!(
+        (original_euler, sampled_euler),
+        (0, 0),
+        "torus hole changed"
+    );
+    assert!(
+        original_volume > 0.0 && sampled_volume > 0.0,
+        "surface winding changed"
+    );
+    assert!(
+        ((sampled_volume / original_volume) - 1.0).abs() < 0.03,
+        "enclosed volume changed by more than 3%"
+    );
+    for axis in 0..3 {
+        assert!((sampled_min[axis] - original_min[axis]).abs() <= 0.25);
+        assert!((sampled_max[axis] - original_max[axis]).abs() <= 0.25);
+    }
+}
+
 #[test]
 fn voxel_grid_routes_preserve_geometry_or_report_loss() {
     let scratch = Scratch::new();
@@ -84,6 +185,64 @@ fn voxel_grid_routes_preserve_geometry_or_report_loss() {
             assert!(reread.cells > 0, "{extension}");
         }
     }
+}
+
+#[test]
+fn matched_grid_preserves_reference_coordinates_and_occupancy() {
+    let scratch = Scratch::new();
+    let reference = grid_input(&scratch);
+    let shell = scratch.path("shell.stl");
+    let accepted = Options {
+        accept_all: true,
+        ..Options::default()
+    };
+    convert(&reference, &shell, &accepted).unwrap();
+    let output = scratch.path("matched.vti");
+    let options = Options {
+        match_grid: Some(reference.clone()),
+        ..accepted
+    };
+    let plan = preview(&shell, &output, &options).unwrap();
+    let estimate = plan.voxel_estimate.unwrap();
+    assert_eq!(
+        (estimate.origin, estimate.spacing, estimate.dims),
+        ([2.0, 3.0, 4.0], 0.5, [2, 1, 1])
+    );
+    assert!(!output.exists());
+    assert_eq!(
+        convert(&shell, &output, &options).unwrap().voxel_grid,
+        Some(([2, 1, 1], 2))
+    );
+    let text = std::fs::read_to_string(&output).unwrap();
+    assert!(text.contains("Origin=\"2 3 4\" Spacing=\"0.5 0.5 0.5\""));
+    let values = text
+        .split("<DataArray")
+        .nth(1)
+        .unwrap()
+        .split('>')
+        .nth(1)
+        .unwrap()
+        .split('<')
+        .next()
+        .unwrap();
+    assert_eq!(values.split_whitespace().collect::<Vec<_>>(), ["1", "1"]);
+
+    let invalid = scratch.write("wrong.vox", b"not a VTI reference");
+    let rejected = scratch.path("rejected.vti");
+    assert_eq!(
+        preview(
+            &shell,
+            &rejected,
+            &Options {
+                match_grid: Some(invalid),
+                ..Options::default()
+            }
+        )
+        .unwrap_err()
+        .code,
+        "E_USAGE"
+    );
+    assert!(!rejected.exists());
 }
 
 #[test]

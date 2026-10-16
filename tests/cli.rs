@@ -212,6 +212,77 @@ fn voxel_preview_reports_dimensions_without_writing() {
     assert!(!s.0.join("donut.vti").exists());
 }
 
+#[test]
+fn preview_human_receipts_show_grid_limits_and_companion_notices() {
+    let s = Scratch::new();
+    let donut = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/donut.stl");
+    let grid = s.run(&[
+        "convert",
+        donut,
+        "donut.vti",
+        "--infill-shape",
+        "hex8",
+        "--infill-unit-size",
+        "0.25",
+        "--preview",
+    ]);
+    assert!(grid.status.success());
+    let text = String::from_utf8(grid.stdout).unwrap();
+    assert!(text.contains("Grid: 26 × 26 × 7"));
+    assert!(text.contains("Grid work estimate only"));
+    assert!(!s.0.join("donut.vti").exists());
+
+    let limited = s.run(&[
+        "convert",
+        donut,
+        "donut.vox",
+        "--infill-shape",
+        "hex8",
+        "--infill-unit-size",
+        "0.02",
+        "--preview",
+    ]);
+    assert!(limited.status.success());
+    assert!(String::from_utf8_lossy(&limited.stdout).contains("Limit: VOX dimensions exceed 256"));
+    assert!(!s.0.join("donut.vox").exists());
+
+    let paired = s.run(&[
+        "convert",
+        "mesh.bdf",
+        "result.op2",
+        "--mesh-out",
+        "companion.msh",
+        "--preview",
+    ]);
+    assert!(paired.status.success());
+    let text = String::from_utf8(paired.stdout).unwrap();
+    assert!(text.contains("Companion notice:"));
+    assert!(text.contains("Destination writer checked"));
+    assert!(!s.0.join("result.op2").exists() && !s.0.join("companion.msh").exists());
+}
+
+#[test]
+fn voxel_conversion_receipts_report_dimensions_in_both_modes() {
+    let s = Scratch::new();
+    std::fs::write(s.0.join("input.vti"),
+        "<VTKFile type=\"ImageData\"><ImageData WholeExtent=\"0 2 0 1 0 1\" Origin=\"2 3 4\" Spacing=\"0.5 0.5 0.5\"><Piece Extent=\"0 2 0 1 0 1\"><PointData/><CellData><DataArray type=\"UInt8\" Name=\"occupancy\" format=\"ascii\">1 1</DataArray></CellData></Piece></ImageData></VTKFile>")
+        .unwrap();
+    let json = s.run(&["convert", "input.vti", "json.vox", "--accept-all", "--json"]);
+    assert!(
+        json.status.success(),
+        "{}",
+        String::from_utf8_lossy(&json.stdout)
+    );
+    let text = String::from_utf8(json.stdout).unwrap();
+    assert!(text.contains("\"dimensions\":[2,1,1]"));
+    assert!(text.contains("\"occupied_cells\":2"));
+    let human = s.run(&["convert", "input.vti", "human.vox", "--accept-all"]);
+    assert!(human.status.success());
+    let text = String::from_utf8(human.stdout).unwrap();
+    assert!(text.contains("from 12 source points, 2 source cells"));
+    assert!(text.contains("Voxel grid: 2 × 1 × 1 cells, 2 occupied"));
+}
+
 /// Require projection acknowledgement before creating an output file.
 #[test]
 fn refused_conversion_does_not_create_output() {

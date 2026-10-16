@@ -184,8 +184,20 @@ pub(super) fn tetrahedralize(
 
 #[cfg(test)]
 mod tests {
-    use super::require_closed_surface;
+    #[cfg(unix)]
+    use super::tetrahedralize;
+    use super::{WorkDir, read_mesh, require_closed_surface};
+    #[cfg(unix)]
+    use crate::conversion::{Format, InfillShape, Options, ReadResult};
+    #[cfg(unix)]
+    use crate::core::Dataset;
     use crate::core::VoxelGrid;
+    #[cfg(unix)]
+    use crate::formats::vtu;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    const CUBE_TETS: &str = "$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$Nodes\n8\n1 0 0 0\n2 1 0 0\n3 1 1 0\n4 0 1 0\n5 0 0 1\n6 1 0 1\n7 1 1 1\n8 0 1 1\n$EndNodes\n$Elements\n6\n1 4 2 1 1 1 2 3 7\n2 4 2 1 1 1 3 4 7\n3 4 2 1 1 1 4 8 7\n4 4 2 1 1 1 8 5 7\n5 4 2 1 1 1 5 6 7\n6 4 2 1 1 1 6 2 7\n$EndElements\n";
 
     #[test]
     fn rejects_open_surface_before_running_mesher() {
@@ -199,5 +211,115 @@ mod tests {
         require_closed_surface(&surface).unwrap();
         surface.cells.pop();
         assert_eq!(require_closed_surface(&surface).unwrap_err().code, "E_MESH");
+    }
+
+    #[test]
+    fn mesher_output_requires_bounded_tetrahedral_volume() {
+        let work = WorkDir::new().unwrap();
+        let path = work.0.join("mesh.msh");
+        std::fs::write(&path, CUBE_TETS).unwrap();
+        assert_eq!(read_mesh(&path, 10).unwrap_err().code, "E_LIMIT");
+        let mesh = read_mesh(&path, 10_000).unwrap().mesh;
+        assert_eq!(mesh.cells.len(), 6);
+        assert_eq!(mesh.points.len(), 8);
+
+        let mixed = include_str!("../../tests/fixtures/gmsh-2.2-mixed.msh");
+        std::fs::write(&path, mixed).unwrap();
+        assert_eq!(read_mesh(&path, 10_000).unwrap_err().code, "E_MESHER");
+        let no_volume = format!(
+            "{}$Elements\n0\n$EndElements\n",
+            CUBE_TETS.split("$Elements").next().unwrap()
+        );
+        std::fs::write(&path, no_volume).unwrap();
+        assert_eq!(read_mesh(&path, 10_000).unwrap_err().code, "E_MESHER");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mesher_process_contract_keeps_known_cube_volume_and_reports_failures() {
+        let work = WorkDir::new().unwrap();
+        let executable = work.0.join("gmsh-test");
+        let grid = VoxelGrid {
+            origin: [0.0; 3],
+            spacing: 1.0,
+            dims: [1, 1, 1],
+            occupied: vec![1],
+        };
+        let surface = grid.surface_mesh().unwrap();
+        let options = Options {
+            gmsh: Some(executable.clone()),
+            ..Options::default()
+        };
+        std::fs::write(
+            &executable,
+            format!("#!/bin/sh\ncat > mesh.msh <<'MSH'\n{CUBE_TETS}MSH\n"),
+        )
+        .unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let output = tetrahedralize(&surface, &options, Some(0.5)).unwrap();
+        assert_eq!(output.mesh.cells.len(), 6);
+        let volume: f64 = output
+            .mesh
+            .cells
+            .iter()
+            .map(|cell| {
+                let [a, b, c, d] =
+                    std::array::from_fn(|i| output.mesh.points[cell.connectivity[i]].position);
+                let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+                let ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+                let ad = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
+                (ab[0] * (ac[1] * ad[2] - ac[2] * ad[1]) - ab[1] * (ac[0] * ad[2] - ac[2] * ad[0])
+                    + ab[2] * (ac[0] * ad[1] - ac[1] * ad[0]))
+                    .abs()
+                    / 6.0
+            })
+            .sum();
+        assert!((volume - 1.0).abs() < 1e-12);
+
+        let source = ReadResult {
+            format: Format::Stl,
+            dataset: Dataset {
+                mesh: surface.clone(),
+                fields: Vec::new(),
+            },
+            voxel_grid: None,
+            omissions: Vec::new(),
+            generated_point_ids: true,
+        };
+        let mut bytes = Vec::new();
+        let report = crate::conversion::convert(
+            source,
+            Format::Vtu,
+            &Options {
+                infill_shape: Some(InfillShape::Tet4),
+                infill_unit_size: Some(0.5),
+                ..options.clone()
+            },
+            &mut bytes,
+        )
+        .unwrap();
+        assert!(
+            report
+                .omissions
+                .iter()
+                .any(|item| item.detail.contains("conforming Tet4"))
+        );
+        let reread = vtu::read_projection(std::str::from_utf8(&bytes).unwrap()).unwrap();
+        assert_eq!(reread.dataset.mesh.cells.len(), 6);
+
+        std::fs::write(&executable, "#!/bin/sh\necho mesher-failed >&2\nexit 7\n").unwrap();
+        assert!(
+            tetrahedralize(&surface, &options, None)
+                .unwrap_err()
+                .message
+                .contains("mesher-failed")
+        );
+        std::fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
+        assert!(
+            tetrahedralize(&surface, &options, None)
+                .unwrap_err()
+                .message
+                .contains("did not write a mesh")
+        );
     }
 }

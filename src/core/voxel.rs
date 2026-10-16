@@ -1010,4 +1010,127 @@ mod tests {
                 .contains("more than two")
         );
     }
+
+    #[test]
+    fn invalid_sampling_plans_and_shapes_fail_before_expansion() {
+        let cube = VoxelGrid {
+            origin: [0.0; 3],
+            spacing: 1.0,
+            dims: [1, 1, 1],
+            occupied: vec![1],
+        };
+        let surface = cube.surface_mesh().unwrap();
+        let wrong_spacing = VoxelGrid {
+            spacing: 0.5,
+            ..cube.clone()
+        };
+        assert!(
+            VoxelGrid::estimate_surface(&surface, 1.0, Some(&wrong_spacing))
+                .unwrap_err()
+                .message
+                .contains("spacing differs")
+        );
+        assert!(
+            VoxelGrid::from_surface(&surface, 3.0)
+                .unwrap_err()
+                .message
+                .contains("no voxel centers")
+        );
+
+        let dense = VoxelGrid {
+            dims: [4, 4, 4],
+            occupied: vec![1; 64],
+            ..cube
+        };
+        let costly =
+            VoxelGrid::estimate_surface(&dense.surface_mesh().unwrap(), 0.05, None).unwrap();
+        assert!(costly.cells < 2_000_000);
+        assert!(
+            costly
+                .check_limits()
+                .unwrap_err()
+                .message
+                .contains("triangle checks")
+        );
+        assert_eq!(
+            dense.volume_mesh_as(CellKind::Triangle3).unwrap_err().code,
+            "E_VOXEL"
+        );
+        let too_many_pyramids = VoxelGrid {
+            dims: [50_000, 1, 1],
+            occupied: vec![1; 50_000],
+            ..dense
+        };
+        assert!(
+            too_many_pyramids
+                .volume_mesh_as(CellKind::Pyramid5)
+                .unwrap_err()
+                .message
+                .contains("explicit mesh limit")
+        );
+    }
+
+    #[test]
+    fn degenerate_surfaces_and_invalid_smoothing_are_rejected() {
+        let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
+        let degenerate = Mesh {
+            points: points
+                .into_iter()
+                .enumerate()
+                .map(|(index, position)| Point {
+                    id: (index + 1) as u64,
+                    position,
+                })
+                .collect(),
+            cells: [vec![0, 1, 2], vec![2, 1, 0]]
+                .into_iter()
+                .enumerate()
+                .map(|(index, connectivity)| Cell {
+                    id: (index + 1) as u64,
+                    kind: CellKind::Triangle3,
+                    connectivity,
+                    property_id: None,
+                })
+                .collect(),
+            ..Mesh::default()
+        };
+        assert!(
+            VoxelGrid::from_surface(&degenerate, 1.0)
+                .unwrap_err()
+                .message
+                .contains("zero-area")
+        );
+        let mut surface = VoxelGrid {
+            origin: [0.0; 3],
+            spacing: 1.0,
+            dims: [1, 1, 1],
+            occupied: vec![1],
+        }
+        .surface_mesh()
+        .unwrap();
+        assert_eq!(
+            smooth_surface(&mut surface, 51).unwrap_err().code,
+            "E_VOXEL"
+        );
+        let mut volume = VoxelGrid {
+            origin: [0.0; 3],
+            spacing: 1.0,
+            dims: [1, 1, 1],
+            occupied: vec![1],
+        }
+        .volume_mesh()
+        .unwrap();
+        assert_eq!(smooth_surface(&mut volume, 1).unwrap_err().code, "E_VOXEL");
+        let line = Mesh {
+            points: degenerate.points,
+            cells: vec![Cell {
+                id: 1,
+                kind: CellKind::Line2,
+                connectivity: vec![0, 1],
+                property_id: None,
+            }],
+            ..Mesh::default()
+        };
+        assert_eq!(boundary_surface(&line).unwrap_err().code, "E_MESH");
+    }
 }
