@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use caexfer::Format;
+
 // Give concurrent CLI test scratch directories distinct process-local suffixes.
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 /// Isolated directory for one CLI test invocation.
@@ -648,6 +650,12 @@ fn formats_advertises_read_only_pch() {
     let human = s.run(&["formats"]);
     assert!(human.status.success());
     let listing = String::from_utf8(human.stdout).unwrap();
+    let listed: Vec<_> = listing
+        .lines()
+        .map(|line| line.split_whitespace().next().unwrap())
+        .collect();
+    let supported: Vec<_> = Format::ALL.into_iter().map(Format::name).collect();
+    assert_eq!(listed, supported);
     assert!(listing.contains("vti  ASCII XML ImageData occupancy, read/write"));
     assert!(listing.contains("vox  MagicaVoxel 150 single-model occupancy, read/write"));
     assert!(listing.contains("pch  ASCII real SORT1 displacement, read-only"));

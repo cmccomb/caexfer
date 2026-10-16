@@ -17,6 +17,7 @@ pub use format::{Format, InfillShape, Options};
 pub use read::read_path;
 pub use report::{AssumptionKind, CompanionReport, ConversionReport, Omission, ReadResult, Stage};
 pub use write::convert;
+pub(crate) use write::validate_route_options;
 
 /// Read a VTI reference without expanding occupancy into an explicit mesh.
 pub(crate) fn load_match_grid(

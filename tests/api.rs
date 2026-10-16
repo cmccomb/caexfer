@@ -3,7 +3,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use caexfer::{AssumptionKind, MshVersion, Options, Stage, convert, validate};
+use caexfer::{
+    AssumptionKind, InfillShape, MshVersion, Options, Stage, convert, preview, validate,
+};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -33,6 +35,46 @@ impl Drop for Scratch {
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(name)
+}
+
+#[test]
+fn voxel_preview_rejects_options_that_conversion_rejects() {
+    let scratch = Scratch::new();
+    let source = fixture("examples/donut.stl");
+    let output = scratch.path("donut.vti");
+    let infill = Options {
+        infill_shape: Some(InfillShape::Hex8),
+        infill_unit_size: Some(0.5),
+        ..Options::default()
+    };
+    for options in [
+        Options {
+            surface: true,
+            ..infill.clone()
+        },
+        Options {
+            gmsh: Some(PathBuf::from("gmsh")),
+            ..infill.clone()
+        },
+        Options {
+            smooth_iterations: 1,
+            ..infill.clone()
+        },
+        Options {
+            surface: true,
+            ..Options::default()
+        },
+    ] {
+        assert_eq!(
+            convert(&source, &output, &options).unwrap_err().code,
+            "E_USAGE"
+        );
+        assert_eq!(
+            preview(&source, &output, &options).unwrap_err().code,
+            "E_USAGE"
+        );
+        assert!(!output.exists());
+    }
 }
 
 #[test]

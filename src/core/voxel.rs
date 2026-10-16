@@ -475,20 +475,6 @@ impl VoxelGrid {
     ) -> Result<Self> {
         let estimate = Self::estimate_surface(mesh, spacing, reference)?;
         estimate.check_limits()?;
-        mesh.validate()?;
-        if !spacing.is_finite()
-            || spacing <= 0.0
-            || mesh.cells.is_empty()
-            || mesh
-                .cells
-                .iter()
-                .any(|c| !matches!(c.kind, CellKind::Triangle3 | CellKind::Quad4))
-        {
-            return Err(Error::new(
-                "E_VOXEL",
-                "voxelization needs positive spacing and a triangle/quad surface",
-            ));
-        }
         let mut edges = BTreeMap::<([u64; 3], [u64; 3]), usize>::new();
         let mut triangles = Vec::new();
         for cell in &mesh.cells {

@@ -386,13 +386,6 @@ pub(super) fn parse_args(raw: &[OsString]) -> Result<Args> {
     if args.infill_shape.is_some() && args.surface {
         return Err(usage("--infill-shape cannot be combined with --surface"));
     }
-    if args.gmsh.is_some()
-        && args
-            .infill_shape
-            .is_some_and(|shape| shape != InfillShape::Tet4)
-    {
-        return Err(usage("--gmsh applies only to tet4 infill"));
-    }
     if args.surface && args.command != "convert" {
         return Err(usage("--surface applies only to convert"));
     }

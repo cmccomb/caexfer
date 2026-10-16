@@ -59,6 +59,44 @@ fn compact_mesh_points(dataset: &mut Dataset) -> usize {
     original_count - dataset.mesh.points.len()
 }
 
+/// Check route options that do not depend on source contents.
+pub(crate) fn validate_route_options(target: Format, options: &Options) -> Result<()> {
+    if options.infill_shape.is_some() != options.infill_unit_size.is_some()
+        || options
+            .infill_unit_size
+            .is_some_and(|size| !size.is_finite() || size <= 0.0)
+        || (options.infill_shape.is_some() && options.surface)
+        || (options.match_grid.is_some()
+            && (options.infill_shape.is_some() || options.surface || options.gmsh.is_some()))
+    {
+        return Err(Error::new(
+            "E_USAGE",
+            "infill requires a shape and positive unit size and cannot use another geometry projection",
+        ));
+    }
+    if options.gmsh.is_some() && options.infill_shape != Some(InfillShape::Tet4) {
+        return Err(Error::new("E_USAGE", "gmsh requires tet4 infill"));
+    }
+    if options.surface
+        && matches!(
+            target,
+            Format::Vti | Format::Vox | Format::Op2 | Format::Pch
+        )
+    {
+        return Err(Error::new(
+            "E_USAGE",
+            "--surface requires volume input and a mesh output",
+        ));
+    }
+    if options.smooth_iterations > 50 || (options.smooth_iterations > 0 && target != Format::Stl) {
+        return Err(Error::new(
+            "E_USAGE",
+            "smooth_iterations must be 1-50 and applies only to VTI/VOX to STL",
+        ));
+    }
+    Ok(())
+}
+
 /// Write a previously read source in another supported format.
 ///
 /// OP2 output requires exactly one nodal displacement field. A caller may
@@ -83,19 +121,7 @@ pub fn convert(
         .omissions
         .iter()
         .any(|item| item.assumption == Some(AssumptionKind::SyntheticZero));
-    if options.infill_shape.is_some() != options.infill_unit_size.is_some()
-        || options
-            .infill_unit_size
-            .is_some_and(|size| !size.is_finite() || size <= 0.0)
-        || (options.infill_shape.is_some() && options.surface)
-        || (options.match_grid.is_some()
-            && (options.infill_shape.is_some() || options.surface || options.gmsh.is_some()))
-    {
-        return Err(Error::new(
-            "E_USAGE",
-            "infill requires a shape and positive unit size and cannot use another geometry projection",
-        ));
-    }
+    validate_route_options(target, options)?;
     let tetrahedralize = options.infill_shape == Some(InfillShape::Tet4);
     let voxel_target = matches!(target, Format::Vti | Format::Vox);
     let reference = load_match_grid(options)?;
@@ -132,9 +158,6 @@ pub fn convert(
             "grid infill requires a closed surface mesh and a volume-mesh output",
         ));
     }
-    if options.gmsh.is_some() && !tetrahedralize {
-        return Err(Error::new("E_USAGE", "gmsh requires tet4 infill"));
-    }
     if tetrahedralize
         && (source.voxel_grid.is_some()
             || matches!(
@@ -155,25 +178,19 @@ pub fn convert(
         ));
     }
     if options.surface
-        && (matches!(
-            target,
-            Format::Vti | Format::Vox | Format::Op2 | Format::Pch
-        ) || !source
+        && !source
             .dataset
             .mesh
             .cells
             .iter()
-            .any(|cell| cell.kind.dimension() == 3))
+            .any(|cell| cell.kind.dimension() == 3)
     {
         return Err(Error::new(
             "E_USAGE",
             "--surface requires volume input and a mesh output",
         ));
     }
-    if options.smooth_iterations > 50
-        || (options.smooth_iterations > 0
-            && !(target == Format::Stl && source.voxel_grid.is_some()))
-    {
+    if options.smooth_iterations > 0 && source.voxel_grid.is_none() {
         return Err(Error::new(
             "E_USAGE",
             "smooth_iterations must be 1-50 and applies only to VTI/VOX to STL",

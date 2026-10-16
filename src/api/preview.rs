@@ -63,12 +63,7 @@ pub fn preview(
             "mesh_output applies only to OP2 output",
         ));
     }
-    if options.match_grid.is_some() && options.infill_shape.is_some() {
-        return Err(Error::new(
-            "E_USAGE",
-            "match_grid supplies hex8 infill size; omit infill flags",
-        ));
-    }
+    conversion::validate_route_options(target, options)?;
     let source_format = options
         .input_format
         .map_or_else(|| Format::from_input_path(input), Ok)?;
