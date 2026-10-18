@@ -21,4 +21,4 @@ Keep the donut voxel round-trip regression within 3% enclosed-volume drift,
 with a closed triangle surface and the torus hole intact. Check that the
 tetrahedral mesher boundary rejects bad output and preserves the unit-cube
 volume in its known-mesh contract test.
-Review the draft release notes before publishing.
+Review the release notes before publishing.

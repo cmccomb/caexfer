@@ -17,25 +17,22 @@ given a matching mesh. Each conversion reports omissions and assumptions.
 
 ## Get started
 
-Requires Rust 1.86 or newer. The published crate is v0.1.2; to try the
-v0.2.0 branch's CLI from this checkout:
+Requires Rust 1.86 or newer. Install the CLI from crates.io:
 
 ```sh
-cargo run -- formats
+cargo install caexfer
+caexfer formats
 ```
 
-For the published v0.1.2 library, add the crate to your Rust project:
+Add the library to a Rust project with:
 
 ```sh
 cargo add caexfer
 ```
 
-The voxel routes and `formats` command are in this v0.2.0 branch until its
-release.
-
 The CLI and library support the same format routes. The examples below use
 fixtures from a repository checkout; run them from its root with the binary
-built from this branch (`cargo build` puts it at `target/debug/caexfer`). This sequence
+built from that checkout (`cargo build` puts it at `target/debug/caexfer`). This sequence
 carries nodal results from FRD through VTU to Gmsh MSH 2.2, then reads PCH
 results with a matching BDF mesh.
 
@@ -162,7 +159,7 @@ hole. The near-zero volume difference at 0.25 does not mean the local surface
 is exact: voxel steps remain. Ten smoothing passes round those steps and give
 a +0.97% volume difference, but cannot recover detail smaller than a cell.
 
-Reproduce the finer round trip from a checkout of this branch:
+Reproduce the finer round trip from a repository checkout:
 
 ```sh
 cargo run -- convert examples/donut.stl donut.vti --infill-shape hex8 --infill-unit-size 0.25 --accept-omissions

@@ -9,7 +9,7 @@
 )]
 // Grid dimensions are bounded to two million cells before coordinate casts.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{Cell, CellKind, Error, Mesh, Point, Result};
 
@@ -633,11 +633,20 @@ pub fn boundary_surface(mesh: &Mesh) -> Result<Mesh> {
         return Ok(output);
     }
     let mut faces = BTreeMap::<Vec<[u64; 3]>, (Vec<usize>, usize)>::new();
+    let mut volume_cells = BTreeSet::<(usize, Vec<[u64; 3]>)>::new();
     for cell in &mesh.cells {
         if cell.kind.dimension() != 3 {
             continue;
         }
         let c = &cell.connectivity;
+        let mut cell_key: Vec<[u64; 3]> = c
+            .iter()
+            .map(|&i| mesh.points[i].position.map(coordinate_bits))
+            .collect();
+        cell_key.sort_unstable();
+        if !volume_cells.insert((c.len(), cell_key)) {
+            return Err(Error::new("E_MESH", "duplicate coincident volume cells"));
+        }
         let local: &[&[usize]] = match cell.kind {
             CellKind::Tet4 => &[&[0, 2, 1], &[0, 1, 3], &[1, 2, 3], &[2, 0, 3]],
             CellKind::Hex8 => &[
@@ -998,11 +1007,43 @@ mod tests {
         inverted.cells[0].connectivity = vec![3, 2, 1, 0, 7, 6, 5, 4];
         assert_eq!(boundary_surface(&inverted).unwrap().cells.len(), 12);
         let mut nonmanifold = grid.volume_mesh().unwrap();
-        for id in 2..=3 {
-            let mut extra = nonmanifold.cells[0].clone();
-            extra.id = id;
-            nonmanifold.cells.push(extra);
-        }
+        let mut duplicate = nonmanifold.cells[0].clone();
+        duplicate.id = 2;
+        nonmanifold.cells.push(duplicate);
+        assert!(
+            boundary_surface(&nonmanifold)
+                .unwrap_err()
+                .message
+                .contains("duplicate coincident")
+        );
+
+        let nonmanifold = Mesh {
+            points: [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 0.0, -1.0],
+                [0.0, 0.0, 2.0],
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(index, position)| Point {
+                id: (index + 1) as u64,
+                position,
+            })
+            .collect(),
+            cells: (3..6)
+                .enumerate()
+                .map(|(index, apex)| Cell {
+                    id: (index + 1) as u64,
+                    kind: CellKind::Tet4,
+                    connectivity: vec![0, 1, 2, apex],
+                    property_id: None,
+                })
+                .collect(),
+            ..Mesh::default()
+        };
         assert!(
             boundary_surface(&nonmanifold)
                 .unwrap_err()

@@ -1,6 +1,6 @@
 # Voxel geometry scope for 0.2.0
 
-This branch covers two workflows: exchange an existing regular voxel grid, and
+Version 0.2.0 covers two workflows: exchange an existing regular voxel grid, and
 voxelize supported mesh geometry. Neither workflow infers physical units.
 
 ## Existing grids

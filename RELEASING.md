@@ -9,8 +9,8 @@ Do not tag a candidate as published until the registry confirms the upload.
 3. Run `cargo publish --dry-run` without `--allow-dirty`. Check the packaged
    file list with `cargo package --list` and inspect the README, license files,
    source files, and fixture provenance included in the archive.
-4. Prepare version-specific GitHub Release notes; for the 0.2.0 candidate, use
-   [the draft](docs/RELEASE_NOTES_0.2.0.md). Confirm that the planned version
+4. Prepare version-specific GitHub Release notes; for 0.2.0, use
+   [the release notes](docs/RELEASE_NOTES_0.2.0.md). Confirm that the planned version
    is not already published and that the publishing account has a verified
    email and a suitable token.
 5. Publish with `cargo publish`, then independently confirm that the version

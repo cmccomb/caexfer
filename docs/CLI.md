@@ -1,9 +1,8 @@
 # CLI contract
 
-This guide describes the v0.2.0 branch. From its checkout, use
+This guide describes caexfer v0.2.0. From a repository checkout, use
 `cargo run -- COMMAND ...` or build the binary with `cargo build` and run
-`target/debug/caexfer`. The released v0.1.2 CLI does not include the `formats`
-command or voxel routes. Rust 1.86+ is required. All routes run without Python.
+`target/debug/caexfer`. Rust 1.86+ is required. All routes run without Python.
 
 ```sh
 caexfer formats

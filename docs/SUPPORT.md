@@ -154,6 +154,8 @@ are not repaired; parity sampling can give unexpected occupancy where closed
 components overlap. External volume faces are extracted from
 Tet4, Hex8, Wedge6, and Pyramid5 cells. Grid-to-volume output emits Hex8 cells
 with shared corners; grid-to-STL emits exposed faces as two triangles each.
+Boundary extraction rejects coincident duplicate volume cells and faces shared
+by more than two cells.
 Fine details, fields, material IDs, and original mesh identity are not preserved.
 The simple sampler rejects jobs above 100 million voxel-triangle checks.
 By default, the grid starts at the source surface's minimum bound. A VTI

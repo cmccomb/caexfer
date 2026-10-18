@@ -3,7 +3,6 @@
 | File | Purpose |
 | --- | --- |
 | `logo.svg` | Editable CAE Ferris mark used by the repository README. |
-| `conversion-flow.svg` | Editable flowchart of format groups and supported conversion directions. |
 | `mathematical-conversion-map.svg` | User-facing map of packaging and geometry transformations. |
 | `mathematical-conversion-map.tex` | Editable TikZ source for the mathematical conversion map. |
 | `donut-voxel-comparison.png` | Matched-view STL → VTI → STL comparison at three voxel sizes and one smoothed result. |
@@ -31,16 +30,6 @@ SVG paint order controls the overlaps:
 The paper stacks and laptop are vector paths traced from generated artwork.
 Keep the groups and their order when editing the mark. Check the complete
 illustration and a 320-pixel preview on light and dark backgrounds.
-
-## Conversion flowchart
-
-`conversion-flow.svg` groups formats by the roles used under `src/formats/`.
-The arrows show reader and writer availability for each group. OP2 is readable
-and writable with a companion mesh; PCH is read-only. The diagram describes
-supported projections, so it does not promise lossless transfer. Keep its
-accessible title and description current when adapter capabilities change.
-Review it at full size and at the README's typical displayed width.
-The README uses a relative image URL so each branch shows its own diagram.
 
 ## Mathematical conversion map
 
@@ -74,6 +63,5 @@ interpolation.
 `rustacean-flat-happy.svg` is the unmodified Happy Ferris SVG from
 [rustacean.net](https://rustacean.net/assets/rustacean-flat-happy.svg), retrieved
 October 4, 2026. The site identifies Karen Rustad Tölva as the creator and
-publishes Ferris under CC0. `logo.svg` and `conversion-flow.svg` embed Ferris
-vector paths. Keep the upstream file for provenance; edit the composed paths
-in the relevant SVG.
+publishes Ferris under CC0. `logo.svg` embeds Ferris vector paths. Keep the
+upstream file for provenance; edit the composed paths in the logo.
