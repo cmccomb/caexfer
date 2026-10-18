@@ -3,7 +3,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use caexfer::{AssumptionKind, MshVersion, Options, Stage, convert, validate};
+use caexfer::{
+    AssumptionKind, InfillShape, MshVersion, Options, Stage, convert, preview, validate,
+};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -33,6 +35,187 @@ impl Drop for Scratch {
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(name)
+}
+
+#[test]
+fn voxel_preview_rejects_options_that_conversion_rejects() {
+    let scratch = Scratch::new();
+    let source = fixture("examples/donut.stl");
+    let output = scratch.path("donut.vti");
+    let infill = Options {
+        infill_shape: Some(InfillShape::Hex8),
+        infill_unit_size: Some(0.5),
+        ..Options::default()
+    };
+    for options in [
+        Options {
+            surface: true,
+            ..infill.clone()
+        },
+        Options {
+            gmsh: Some(PathBuf::from("gmsh")),
+            ..infill.clone()
+        },
+        Options {
+            smooth_iterations: 1,
+            ..infill.clone()
+        },
+        Options {
+            surface: true,
+            ..Options::default()
+        },
+    ] {
+        assert_eq!(
+            convert(&source, &output, &options).unwrap_err().code,
+            "E_USAGE"
+        );
+        assert_eq!(
+            preview(&source, &output, &options).unwrap_err().code,
+            "E_USAGE"
+        );
+        assert!(!output.exists());
+    }
+}
+
+#[test]
+fn preview_reports_synthetic_op2_and_companion_without_writing() {
+    let scratch = Scratch::new();
+    let result_path = scratch.path("results.op2");
+    let companion_path = scratch.path("mesh.msh");
+    let plan = preview(
+        fixture("examples/plate.bdf"),
+        &result_path,
+        &Options {
+            mesh_output: Some(companion_path.clone()),
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    assert!(plan.complete);
+    assert!(plan.omissions.iter().any(|item| {
+        item.stage == Stage::Assumption && item.assumption == Some(AssumptionKind::SyntheticZero)
+    }));
+    assert!(plan.mesh_output.is_some());
+    assert!(!result_path.exists() && !companion_path.exists());
+}
+
+#[test]
+fn preview_reports_unverified_companion_frame_and_voxel_limits() {
+    let scratch = Scratch::new();
+    let plate = fixture("examples/plate.bdf");
+    let op2 = scratch.path("results.op2");
+    let mesh = scratch.path("mesh.vtu");
+    let accepted = Options {
+        accept_all: true,
+        ..Options::default()
+    };
+    convert(&plate, &op2, &accepted).unwrap();
+    convert(&plate, &mesh, &accepted).unwrap();
+    let result = scratch.path("planned.vtu");
+    let plan = preview(
+        &op2,
+        &result,
+        &Options {
+            mesh: Some(mesh),
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    assert!(plan.complete);
+    assert!(plan.omissions.iter().any(|item| {
+        item.stage == Stage::Assumption && item.assumption == Some(AssumptionKind::BasicFrame)
+    }));
+    assert!(!result.exists());
+
+    let vox = scratch.path("donut.vox");
+    let plan = preview(
+        fixture("examples/donut.stl"),
+        &vox,
+        &Options {
+            infill_shape: Some(InfillShape::Hex8),
+            infill_unit_size: Some(0.02),
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    assert!(!plan.complete);
+    assert!(plan.voxel_estimate.unwrap().dims[0] > 256);
+    assert!(plan.limit.unwrap().contains("256 cells"));
+    assert!(!vox.exists());
+}
+
+#[test]
+fn library_rejects_incompatible_geometry_routes_before_output() {
+    let scratch = Scratch::new();
+    let plate = fixture("examples/plate.bdf");
+    let donut = fixture("examples/donut.stl");
+    let line = scratch.path("line.bdf");
+    std::fs::write(&line, b"GRID,1,,0.,0.,0.\nGRID,2,,1.,0.,0.\nCROD,1,7,1,2\n").unwrap();
+    let hex = Options {
+        infill_shape: Some(InfillShape::Hex8),
+        infill_unit_size: Some(1.0),
+        ..Options::default()
+    };
+    for (source, name, options) in [
+        (
+            donut.as_path(),
+            "wrong-shape.vti",
+            Options {
+                infill_shape: Some(InfillShape::Wedge6),
+                ..hex.clone()
+            },
+        ),
+        (line.as_path(), "line.vtu", hex),
+        (
+            line.as_path(),
+            "tet.vtu",
+            Options {
+                infill_shape: Some(InfillShape::Tet4),
+                infill_unit_size: Some(1.0),
+                ..Options::default()
+            },
+        ),
+        (
+            plate.as_path(),
+            "surface.vtu",
+            Options {
+                surface: true,
+                ..Options::default()
+            },
+        ),
+        (
+            donut.as_path(),
+            "smoothed.stl",
+            Options {
+                smooth_iterations: 1,
+                ..Options::default()
+            },
+        ),
+    ] {
+        let output = scratch.path(name);
+        assert_eq!(
+            convert(source, &output, &options).unwrap_err().code,
+            "E_USAGE",
+            "{name}"
+        );
+        assert!(!output.exists(), "{name}");
+    }
+    let invalid_companion = Options {
+        mesh_output: Some(scratch.path("companion.op2")),
+        ..Options::default()
+    };
+    assert_eq!(
+        preview(&plate, scratch.path("mesh.vti"), &invalid_companion)
+            .unwrap_err()
+            .code,
+        "E_USAGE"
+    );
+    assert_eq!(
+        preview(&plate, scratch.path("result.op2"), &invalid_companion)
+            .unwrap_err()
+            .code,
+        "E_USAGE"
+    );
 }
 
 #[test]

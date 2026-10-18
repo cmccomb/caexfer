@@ -1,6 +1,6 @@
 # Format support contract
 
-Run `caexfer --formats` for the executable's read/write list. This document
+Run `caexfer formats` for the executable's read/write list. This document
 defines what each route retains, reports as an omission, or rejects. A listed
 format is a supported subset, not a claim of complete vendor compatibility.
 
@@ -120,13 +120,49 @@ welding. Facet normals and nonstandard binary attribute bytes are reported as
 source omissions. Units are not inferred.
 
 The writer emits binary STL with float32 coordinates and unit normals
-computed from written triangle winding. Only triangle cells are accepted; volume meshes are
-not silently reduced to their boundary. Numeric fields, properties, IDs, and
-shared-vertex identity have no STL mapping and are reported as destination
-losses by conversion. Invalid fields, property IDs, and named sets are rejected
-before writing.
+computed from written triangle winding. The direct writer accepts triangle
+cells. Conversion from supported linear volume meshes extracts external
+triangles and reports the dropped lower-dimensional cells and result data.
+Numeric fields, properties, IDs, and shared-vertex identity have no STL
+mapping and are reported as destination losses by conversion. Invalid fields,
+property IDs, and named sets are rejected before writing.
 Degenerate facets and values that overflow or underflow
 binary float32 fail.
+
+### VTI and VOX occupancy
+
+VTI reads/writes one ASCII VTK XML `ImageData` piece with zero-based extents,
+isotropic spacing, and one `UInt8` cell array named `occupancy` containing 0 or
+1 in x-fastest order. Other arrays, multiple pieces, binary/appended/compressed
+data, and anisotropic grids are rejected. VTI retains origin and spacing.
+Rotated `ImageData` direction matrices are rejected.
+
+VOX reads/writes one MagicaVoxel version 150 `SIZE`/`XYZI` model, at most 256
+cells per axis. The reader accepts an optional palette but omits colors; scene
+graphs, transformations, animations, and multiple models are rejected. VOX
+stores neither physical origin nor spacing: imported models use origin zero
+and unit spacing, while export reports omitted origin/spacing. Export uses
+color index 1 for every occupied cell.
+
+Both formats use binary occupancy, capped at 2,000,000 cells. The public file
+API projects voxel input into an explicit mesh, so input with more than 250,000
+occupied cells fails before that projection allocates points and cells. STL
+surface output additionally rejects more than 250,000 exposed voxel faces.
+Mesh conversion samples a closed, exactly coordinate-welded triangle/quad boundary at voxel
+centers. Open, nonmanifold, and zero-area surfaces fail. Intersecting surfaces
+are not repaired; parity sampling can give unexpected occupancy where closed
+components overlap. External volume faces are extracted from
+Tet4, Hex8, Wedge6, and Pyramid5 cells. Grid-to-volume output emits Hex8 cells
+with shared corners; grid-to-STL emits exposed faces as two triangles each.
+Boundary extraction rejects coincident duplicate volume cells and faces shared
+by more than two cells.
+Fine details, fields, material IDs, and original mesh identity are not preserved.
+The simple sampler rejects jobs above 100 million voxel-triangle checks.
+By default, the grid starts at the source surface's minimum bound. A VTI
+reference grid can instead supply exact origin, spacing, and dimensions;
+surfaces outside its bounds fail rather than being clipped. A read-only preview
+shows dimensions, total cells, and maximum sampler work before occupancy
+allocation. It does not validate watertightness or predict occupied cells.
 
 ### Gmsh MSH
 

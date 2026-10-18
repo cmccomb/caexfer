@@ -1,15 +1,13 @@
 # CLI contract
 
-Install the published CLI with `cargo install caexfer`
-(Rust 2024 edition, toolchain 1.86+). For a development build, use
-`cargo install --git https://github.com/cmccomb/caexfer.git`. In a checkout,
-`cargo run -- COMMAND ...` runs the same CLI without installation. All routes
-run without Python.
+This guide describes caexfer v0.2.0. From a repository checkout, use
+`cargo run -- COMMAND ...` or build the binary with `cargo build` and run
+`target/debug/caexfer`. Rust 1.86+ is required. All routes run without Python.
 
 ```sh
-caexfer --formats
-caexfer validate model.bdf --json
-caexfer validate results.op2 --mesh model.vtu -j
+caexfer formats
+caexfer inspect model.bdf --json
+caexfer inspect results.op2 --mesh model.vtu -j
 caexfer convert model.bdf model.vtu
 caexfer convert model.bdf model.msh --msh-version 2.2
 caexfer convert results.op2 results.vtu --mesh model.bdf
@@ -41,29 +39,44 @@ caexfer convert surface.stl surface.vtu
 caexfer convert named-boundaries.msh named-boundaries.su2
 caexfer convert mesh.unv mesh.vtu
 caexfer convert results.exo results.vtu --step 0
+caexfer convert examples/donut.stl donut.vti --infill-shape hex8 --infill-unit-size 0.25 --accept-omissions
+caexfer convert donut.vti donut-roundtrip.stl --accept-omissions
+caexfer convert examples/donut.stl donut.vti --infill-shape hex8 --infill-unit-size 0.25 --preview
+caexfer convert other.stl aligned.vti --match-grid donut.vti --accept-omissions
 ```
 
 These commands use example input names. The [format limits](SUPPORT.md) describe
 which cells, sets, fields, and time data each route can retain.
 
-`caexfer --help` lists the commands and global options. `caexfer -f` and
-`caexfer --formats` list format capabilities. Run `caexfer validate` or
-`caexfer convert` without paths to see that command's options and examples.
-`--help` works after either command too. Paths can occur
+`caexfer --help` lists the commands and global options. `caexfer formats`
+lists format capabilities. Run `caexfer inspect` or
+`caexfer convert` without paths to see each command's
+options and examples. `--help` works after any command too. Paths can occur
 before or after options; use `--` for paths beginning with a hyphen. Filenames
 use OS-native strings internally; JSON/human display of non-UTF-8 paths is
 lossy, not an exact path serialization.
 
-`-j` abbreviates `--json` for both commands; `-s` abbreviates `--strict` for
-validation.
+`-j` abbreviates `--json` for `inspect` and `convert`; `-s` abbreviates
+`--strict` for `inspect`.
+
+`inspect INPUT` reads the supported source subset and reports counts and source
+notices. It cannot establish whether a chosen destination can represent that
+source. `convert INPUT OUTPUT --preview` checks the proposed route without writing output.
+Most routes use the destination writer and report exact source and destination
+notices. Grid infill stops after a size and work estimate; `complete: false`
+means sampling and destination checks remain for conversion. A source can pass
+`inspect` while `convert --preview` rejects an unsupported route. Preview uses
+the same route options as conversion. It rejects `--overwrite` and acceptance
+flags because it never installs an output.
 
 | Command or option | Result |
 | --- | --- |
-| `-f`, `--formats` | Actual read/write capabilities, not a roadmap |
-| `validate INPUT` | Supported subset checks, projected counts, and source omissions |
+| `formats` | Actual read/write capabilities, not a roadmap |
+| `inspect INPUT` | Source subset checks, projected counts, and source notices |
+| `convert INPUT OUTPUT --preview` | Destination-specific dry projection or grid work estimate; no output file |
 | `convert INPUT OUTPUT` | Project to a writable format; confirm each reported change before installation |
 
-Input extensions are `.bdf`, `.nas`, `.dat`, `.pch`, `.vtu`, `.vtk`, `.msh`, `.inp`,
+Input extensions are `.bdf`, `.nas`, `.dat`, `.pch`, `.vtu`, `.vti`, `.vox`, `.vtk`, `.msh`, `.inp`,
 `.frd`, `.op2`, `.stl`, `.su2`, `.unv`, `.exo`, `.e`, and `.exodus`
 (case-insensitive). `--from FORMAT` overrides the extension;
 this is not content autodetection. `.pch` selects the read-only PCH results
@@ -71,6 +84,26 @@ adapter. Output extension selects the writer.
 MSH input version is detected from `$MeshFormat`; `--msh-version 2.2` selects
 2.2 output, while 4.1 remains the default. The option also applies to an MSH
 companion written through `--mesh-out`.
+`--infill-shape tet4|hex8|wedge6|pyramid5 --infill-unit-size N` selects
+positive-size volume infill for a closed surface. VTI/VOX output from a mesh
+uses `hex8` with these flags. VTI
+and VOX input can be converted to an STL surface or an explicit volume mesh
+without this option. `--smooth-iterations N` (1–50) applies only to VTI/VOX
+to STL and changes the surface away from exact voxel boundaries. Both routes
+report geometry, field, ID, and scale losses that require acceptance. VTI
+retains origin and spacing; VOX does not. See [format limits](SUPPORT.md).
+`--match-grid FILE` uses an existing supported VTI occupancy grid's origin,
+spacing, and dimensions for Hex8 mesh voxelization. Omit infill flags when
+using it. The surface must fit completely inside the reference
+grid. Reference occupancy values are ignored. `convert --preview` creates no output.
+For ordinary conversions it performs the full projection into a discard
+stream, giving exact destination notices. For mesh voxelization it stops
+before occupancy allocation and sampling; it reports estimated dimensions,
+cell count, a conservative maximum triangle-check count, and any applicable
+cell, work, or VOX-axis limit. That estimate does not establish watertightness
+or exact destination losses. A nonzero `limit` in JSON means the requested
+voxelization cannot run at that resolution.
+
 `--mesh FILE` supplies geometry when reading OP2 or PCH. The companion must
 carry original node IDs that match the displacement table; generated one-based
 IDs are rejected. BDF input verifies `GRID CD=0`. Other formats do not carry
@@ -84,7 +117,7 @@ in any writable mesh format: BDF, VTU, VTK, MSH, INP, FRD, STL, SU2, UNV, or
 classic Exodus. The companion must meet that format's topology and storage
 limits. `--subcase N` and zero-based `--step N` select an OP2 or PCH
 displacement result. For FRD, `--step N` selects the step number. These
-selection options also work with `validate`.
+selection options also work with `inspect`.
 For Exodus input, `--step N` selects a zero-based time step. Without it, the
 reader carries all complete scalar fields and times that the destination can
 represent.
@@ -112,23 +145,24 @@ coordinates into the basic frame with a trusted BDF preprocessor first.
 the approval prompt, run `caexfer convert examples/plate.bdf model.vtu` from
 the repository root in a terminal, using a new output filename.
 
-For `validate` and `convert`, `--json` returns the report on stdout as JSON with
+For `inspect` and `convert`, `--json` returns the report on stdout as JSON with
 schema_version=1. Human-readable conversion omission reports go to stderr;
 JSON conversion reports place them in an `omissions` array with each item's
 `stage` (`source`, `destination`, or `assumption`), `acceptance_flag`, and detail. A paired export
-adds `mesh_output` with its path, format, and separate omissions. JSON error
+adds `mesh_output` with its path, format, and separate omissions. VTI/VOX output
+adds `voxel_grid` with dimensions and occupied cell count. JSON error
 output also goes to stdout. Schema version 1 is intentionally small; consumers
 should tolerate new keys.
 
-Exit 0 means the requested scoped operation succeeded. `validate` reports
+Exit 0 means the requested scoped operation succeeded. `inspect` reports
 projected counts, omissions, and assumptions; without `--strict`, notices do
 not fail it. Exit 1 means I/O, parsing, projection, or validation failed.
-`validate --strict` also exits 1 on an omission or assumption. Exit 2 means
+`inspect --strict` also exits 1 on an omission or assumption. Exit 2 means
 invalid CLI usage, including an unattended conversion that needs acceptance.
 Use stable diagnostic `code` values rather than parsing human descriptions.
 The version's code list can grow.
 
-The CLI refuses an existing output path unless `convert --overwrite` is given.
+When writing, the CLI refuses an existing output path unless `--overwrite` is given.
 With `--mesh-out`, the flag applies to both output paths. It does not accept
 omissions or assumptions. The CLI stages and checks both files, obtains any
 required acceptance, then installs new paths with hard links or replaces

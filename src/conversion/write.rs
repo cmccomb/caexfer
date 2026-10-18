@@ -1,10 +1,16 @@
 use std::collections::BTreeSet;
 use std::io::Write;
 
-use crate::core::{Error, FieldLocation, Mesh, Result};
-use crate::formats::{bdf, exodus, frd, inp, msh, op2, stl, su2, unv, vtk, vtu};
+use crate::core::{
+    CellKind, Dataset, Error, FieldLocation, Mesh, Result, VoxelGrid, boundary_surface,
+};
+use crate::formats::{bdf, exodus, frd, inp, msh, op2, stl, su2, unv, vox, vti, vtk, vtu};
 
-use super::{AssumptionKind, ConversionReport, Format, Omission, Options, ReadResult, Stage};
+use super::load_match_grid;
+use super::tetra;
+use super::{
+    AssumptionKind, ConversionReport, Format, InfillShape, Omission, Options, ReadResult, Stage,
+};
 
 /// Remove unmapped solver property IDs and return the number removed.
 fn omit_property_ids(mesh: &mut Mesh) -> usize {
@@ -12,6 +18,83 @@ fn omit_property_ids(mesh: &mut Mesh) -> usize {
         .iter_mut()
         .map(|cell| usize::from(cell.property_id.take().is_some()))
         .sum()
+}
+
+/// Remove volume-only points while keeping surviving point fields aligned.
+fn compact_mesh_points(dataset: &mut Dataset) -> usize {
+    let original_count = dataset.mesh.points.len();
+    let used: BTreeSet<usize> = dataset
+        .mesh
+        .cells
+        .iter()
+        .flat_map(|cell| cell.connectivity.iter().copied())
+        .collect();
+    let mut index_map = vec![0; original_count];
+    for (new, &old) in used.iter().enumerate() {
+        index_map[old] = new;
+    }
+    dataset.mesh.points = std::mem::take(&mut dataset.mesh.points)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(old, point)| {
+            if used.contains(&old) {
+                Some(point)
+            } else {
+                None
+            }
+        })
+        .collect();
+    for cell in &mut dataset.mesh.cells {
+        for index in &mut cell.connectivity {
+            *index = index_map[*index];
+        }
+    }
+    for field in &mut dataset.fields {
+        let width = field.components.len();
+        field.values = used
+            .iter()
+            .flat_map(|&old| field.values[old * width..(old + 1) * width].iter().copied())
+            .collect();
+    }
+    original_count - dataset.mesh.points.len()
+}
+
+/// Check route options that do not depend on source contents.
+pub(crate) fn validate_route_options(target: Format, options: &Options) -> Result<()> {
+    if options.infill_shape.is_some() != options.infill_unit_size.is_some()
+        || options
+            .infill_unit_size
+            .is_some_and(|size| !size.is_finite() || size <= 0.0)
+        || (options.infill_shape.is_some() && options.surface)
+        || (options.match_grid.is_some()
+            && (options.infill_shape.is_some() || options.surface || options.gmsh.is_some()))
+    {
+        return Err(Error::new(
+            "E_USAGE",
+            "infill requires a shape and positive unit size and cannot use another geometry projection",
+        ));
+    }
+    if options.gmsh.is_some() && options.infill_shape != Some(InfillShape::Tet4) {
+        return Err(Error::new("E_USAGE", "gmsh requires tet4 infill"));
+    }
+    if options.surface
+        && matches!(
+            target,
+            Format::Vti | Format::Vox | Format::Op2 | Format::Pch
+        )
+    {
+        return Err(Error::new(
+            "E_USAGE",
+            "--surface requires volume input and a mesh output",
+        ));
+    }
+    if options.smooth_iterations > 50 || (options.smooth_iterations > 0 && target != Format::Stl) {
+        return Err(Error::new(
+            "E_USAGE",
+            "smooth_iterations must be 1-50 and applies only to VTI/VOX to STL",
+        ));
+    }
+    Ok(())
 }
 
 /// Write a previously read source in another supported format.
@@ -32,13 +115,290 @@ pub fn convert(
     options: &Options,
     writer: &mut dyn Write,
 ) -> Result<ConversionReport> {
-    // Count fields before destination-specific filtering; the report describes
-    // the source dataset as well as any losses during output.
+    // Keep synthetic OP2 provenance on the typed source notice.
     let source_fields = source.dataset.fields.len();
     let assumed_zero = source
         .omissions
         .iter()
         .any(|item| item.assumption == Some(AssumptionKind::SyntheticZero));
+    validate_route_options(target, options)?;
+    let tetrahedralize = options.infill_shape == Some(InfillShape::Tet4);
+    let voxel_target = matches!(target, Format::Vti | Format::Vox);
+    let reference = load_match_grid(options)?;
+    let grid_infill = match options.infill_shape {
+        Some(InfillShape::Hex8) => Some(CellKind::Hex8),
+        Some(InfillShape::Wedge6) => Some(CellKind::Wedge6),
+        Some(InfillShape::Pyramid5) => Some(CellKind::Pyramid5),
+        _ if reference.is_some() => Some(CellKind::Hex8),
+        _ => None,
+    };
+    if (options.infill_shape.is_some() || reference.is_some()) && source.voxel_grid.is_some() {
+        return Err(Error::new("E_USAGE", "infill options require mesh input"));
+    }
+    if voxel_target
+        && options
+            .infill_shape
+            .is_some_and(|shape| shape != InfillShape::Hex8)
+    {
+        return Err(Error::new("E_USAGE", "VTI/VOX output requires hex8 infill"));
+    }
+    if grid_infill.is_some()
+        && !voxel_target
+        && (matches!(target, Format::Stl | Format::Op2 | Format::Pch)
+            || source.dataset.mesh.cells.is_empty()
+            || source
+                .dataset
+                .mesh
+                .cells
+                .iter()
+                .any(|cell| cell.kind.dimension() != 2))
+    {
+        return Err(Error::new(
+            "E_USAGE",
+            "grid infill requires a closed surface mesh and a volume-mesh output",
+        ));
+    }
+    if tetrahedralize
+        && (source.voxel_grid.is_some()
+            || matches!(
+                target,
+                Format::Vti | Format::Vox | Format::Stl | Format::Op2 | Format::Pch
+            )
+            || source.dataset.mesh.cells.is_empty()
+            || source
+                .dataset
+                .mesh
+                .cells
+                .iter()
+                .any(|cell| cell.kind.dimension() != 2))
+    {
+        return Err(Error::new(
+            "E_USAGE",
+            "tet4 infill requires a closed surface mesh and a mesh output",
+        ));
+    }
+    if options.surface
+        && !source
+            .dataset
+            .mesh
+            .cells
+            .iter()
+            .any(|cell| cell.kind.dimension() == 3)
+    {
+        return Err(Error::new(
+            "E_USAGE",
+            "--surface requires volume input and a mesh output",
+        ));
+    }
+    if options.smooth_iterations > 0 && source.voxel_grid.is_none() {
+        return Err(Error::new(
+            "E_USAGE",
+            "smooth_iterations must be 1-50 and applies only to VTI/VOX to STL",
+        ));
+    }
+    if options.surface {
+        let lower = source
+            .dataset
+            .mesh
+            .cells
+            .iter()
+            .filter(|cell| cell.kind.dimension() < 3)
+            .count();
+        let cell_fields = source
+            .dataset
+            .fields
+            .iter()
+            .filter(|field| field.location == FieldLocation::Cell)
+            .count();
+        let properties = source
+            .dataset
+            .mesh
+            .cells
+            .iter()
+            .filter(|cell| cell.property_id.is_some())
+            .count();
+        let node_sets = source.dataset.mesh.node_sets.len();
+        let cell_sets = source.dataset.mesh.cell_sets.len();
+        source.dataset.mesh = boundary_surface(&source.dataset.mesh)?;
+        source
+            .dataset
+            .fields
+            .retain(|field| field.location == FieldLocation::Point);
+        let interior_points = compact_mesh_points(&mut source.dataset);
+        source.omissions.push(Omission::new(
+            Stage::Destination,
+            format!("external volume faces extracted as triangles; {lower} lower-dimensional cell(s) excluded; original element IDs replaced"),
+        ));
+        if interior_points > 0 {
+            source.omissions.push(Omission::new(
+                Stage::Destination,
+                format!("{interior_points} interior point(s) and their field values omitted during surface extraction"),
+            ));
+        }
+        for (count, label) in [
+            (cell_fields, "cell field(s)"),
+            (properties, "property ID(s)"),
+            (node_sets, "named node set(s)"),
+            (cell_sets, "named cell set(s)"),
+        ] {
+            if count > 0 {
+                source.omissions.push(Omission::new(
+                    Stage::Destination,
+                    format!("{count} {label} omitted during surface extraction"),
+                ));
+            }
+        }
+    }
+    if tetrahedralize {
+        let fields = source.dataset.fields.len();
+        let properties = source
+            .dataset
+            .mesh
+            .cells
+            .iter()
+            .filter(|cell| cell.property_id.is_some())
+            .count();
+        let node_sets = source.dataset.mesh.node_sets.len();
+        let cell_sets = source.dataset.mesh.cell_sets.len();
+        let triangles = boundary_surface(&source.dataset.mesh)?;
+        source.dataset = tetra::tetrahedralize(&triangles, options, options.infill_unit_size)?;
+        compact_mesh_points(&mut source.dataset);
+        source.omissions.push(Omission::new(
+            Stage::Destination,
+            "closed surface remeshed by Gmsh into conforming Tet4 cells; boundary triangles, node/element IDs and coordinates may change through STL float32 projection",
+        ));
+        for (count, label) in [
+            (fields, "numeric field(s)"),
+            (properties, "property ID(s)"),
+            (node_sets, "named node set(s)"),
+            (cell_sets, "named cell set(s)"),
+        ] {
+            if count > 0 {
+                source.omissions.push(Omission::new(
+                    Stage::Destination,
+                    format!("{count} {label} omitted during tetrahedralization"),
+                ));
+            }
+        }
+    }
+    if target == Format::Stl && source.voxel_grid.is_some() && !options.surface {
+        source.dataset.mesh = source
+            .voxel_grid
+            .as_ref()
+            .ok_or_else(|| Error::new("E_VOXEL", "missing voxel grid"))?
+            .surface_mesh()?;
+        if options.smooth_iterations > 0 {
+            crate::core::smooth_surface(&mut source.dataset.mesh, options.smooth_iterations)?;
+            source.omissions.push(Omission::new(
+                Stage::Destination,
+                format!("voxel STL surface smoothed for {} Taubin cycle(s); geometry no longer exactly follows voxel boundaries", options.smooth_iterations),
+            ));
+        }
+        source.omissions.push(Omission::new(
+            Stage::Destination,
+            if options.smooth_iterations > 0 {
+                "exposed voxel faces triangulated before smoothing; STL detail remains limited by grid resolution"
+            } else {
+                "exposed voxel faces triangulated; stair-step surface retains grid resolution"
+            },
+        ));
+    } else if target == Format::Stl
+        && !options.surface
+        && source
+            .dataset
+            .mesh
+            .cells
+            .iter()
+            .any(|c| c.kind != crate::core::CellKind::Triangle3)
+    {
+        let volume = source
+            .dataset
+            .mesh
+            .cells
+            .iter()
+            .any(|c| c.kind.dimension() == 3);
+        let lower = source
+            .dataset
+            .mesh
+            .cells
+            .iter()
+            .filter(|c| c.kind.dimension() < 3)
+            .count();
+        let properties = source
+            .dataset
+            .mesh
+            .cells
+            .iter()
+            .filter(|c| c.property_id.is_some())
+            .count();
+        let node_sets = source.dataset.mesh.node_sets.len();
+        let cell_sets = source.dataset.mesh.cell_sets.len();
+        source.dataset.mesh = boundary_surface(&source.dataset.mesh)?;
+        for (count, label) in [
+            (properties, "property ID(s)"),
+            (node_sets, "named node set(s)"),
+            (cell_sets, "named cell set(s)"),
+        ] {
+            if count > 0 {
+                source.omissions.push(Omission::new(
+                    Stage::Destination,
+                    format!("{count} {label} omitted during STL boundary extraction"),
+                ));
+            }
+        }
+        source.omissions.push(Omission::new(Stage::Destination,
+            if volume { format!("external volume faces triangulated for STL; {lower} lower-dimensional cell(s) excluded") }
+            else { "quadrilateral faces triangulated for STL".to_owned() }));
+    } else if !options.surface
+        && grid_infill.is_some()
+        && !matches!(target, Format::Stl | Format::Vti | Format::Vox)
+    {
+        let fields = source.dataset.fields.len();
+        let properties = source
+            .dataset
+            .mesh
+            .cells
+            .iter()
+            .filter(|cell| cell.property_id.is_some())
+            .count();
+        let node_sets = source.dataset.mesh.node_sets.len();
+        let cell_sets = source.dataset.mesh.cell_sets.len();
+        let spacing = options
+            .infill_unit_size
+            .or_else(|| reference.as_ref().map(|grid| grid.spacing))
+            .ok_or_else(|| Error::new("E_USAGE", "missing infill unit size"))?;
+        let grid = VoxelGrid::from_surface_with_reference(
+            &source.dataset.mesh,
+            spacing,
+            reference.as_ref(),
+        )?;
+        let kind = grid_infill.unwrap_or(CellKind::Hex8);
+        source.dataset.mesh = grid.volume_mesh_as(kind)?;
+        source.dataset.fields.clear();
+        source.omissions.push(Omission::new(
+            Stage::Destination,
+            format!("closed surface sampled at voxel centers and emitted as {kind:?} volume cells; original node and element IDs replaced"),
+        ));
+        if fields > 0 {
+            source.omissions.push(Omission::new(
+                Stage::Destination,
+                format!("{fields} numeric field(s) omitted during volume meshing"),
+            ));
+        }
+        for (count, label) in [
+            (properties, "property ID(s)"),
+            (node_sets, "named node set(s)"),
+            (cell_sets, "named cell set(s)"),
+        ] {
+            if count > 0 {
+                source.omissions.push(Omission::new(
+                    Stage::Destination,
+                    format!("{count} {label} omitted during volume meshing"),
+                ));
+            }
+        }
+    }
+    let mut voxel_summary = None;
     let dataset = &mut source.dataset;
     let omissions = &mut source.omissions;
     if target != Format::Su2 {
@@ -66,6 +426,75 @@ pub fn convert(
         dataset.mesh.cell_sets.clear();
     }
     match target {
+        Format::Vti | Format::Vox => {
+            let grid = if let Some(grid) = &source.voxel_grid {
+                grid.clone()
+            } else {
+                let spacing = options
+                    .infill_unit_size
+                    .or_else(|| reference.as_ref().map(|grid| grid.spacing))
+                    .ok_or_else(|| {
+                        Error::new(
+                            "E_USAGE",
+                            "mesh to VTI/VOX requires hex8 infill or --match-grid",
+                        )
+                    })?;
+                omissions.push(Omission::new(Stage::Destination,
+                    "closed surface sampled at voxel centers; features below grid spacing may disappear"));
+                let surface = if dataset.mesh.cells.iter().any(|c| c.kind.dimension() == 3) {
+                    let excluded = dataset
+                        .mesh
+                        .cells
+                        .iter()
+                        .filter(|c| c.kind.dimension() < 3)
+                        .count();
+                    omissions.push(Omission::new(
+                        Stage::Destination,
+                        format!("external faces of volume cells extracted before voxel-center sampling; {excluded} lower-dimensional cell(s) excluded"),
+                    ));
+                    boundary_surface(&dataset.mesh)?
+                } else {
+                    dataset.mesh.clone()
+                };
+                if let Some(reference) = &reference {
+                    VoxelGrid::from_surface_with_reference(&surface, spacing, Some(reference))?
+                } else {
+                    VoxelGrid::from_surface(&surface, spacing)?
+                }
+            };
+            if dataset.mesh.cells.iter().any(|c| c.property_id.is_some()) {
+                omissions.push(Omission::new(
+                    Stage::Destination,
+                    "mesh property IDs have no binary occupancy mapping",
+                ));
+            }
+            if !dataset.fields.is_empty() {
+                omissions.push(Omission::new(
+                    Stage::Destination,
+                    format!(
+                        "{} numeric field(s) omitted from binary occupancy",
+                        dataset.fields.len()
+                    ),
+                ));
+            }
+            if target == Format::Vox {
+                if grid
+                    .origin
+                    .iter()
+                    .any(|&v| v.to_bits() != 0.0_f64.to_bits())
+                    || grid.spacing.to_bits() != 1.0_f64.to_bits()
+                {
+                    omissions.push(Omission::new(
+                        Stage::Destination,
+                        "VOX stores grid indices only; physical origin and spacing are omitted",
+                    ));
+                }
+                vox::write(&grid, writer)?;
+            } else {
+                vti::write(&grid, writer)?;
+            }
+            voxel_summary = Some((grid.dims, grid.occupied.iter().filter(|&&v| v != 0).count()));
+        }
         Format::Vtu => {
             // VTU has one array per location and name; multiple source steps
             // require the caller to select a step first.
@@ -419,6 +848,7 @@ pub fn convert(
         cells: dataset.mesh.cells.len(),
         fields: source_fields,
         omissions: source.omissions,
+        voxel_grid: voxel_summary,
         mesh_output: None,
     })
 }

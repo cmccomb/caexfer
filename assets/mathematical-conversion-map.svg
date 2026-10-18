@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1010" viewBox="0 100 1400 1010" role="img" aria-labelledby="title description">
+  <title id="title">Mathematical conversion model for caexfer</title>
+  <desc id="description">Five blocks describe a CAE dataset, a result field, a volumetric mesh, a surface tessellation, and an occupancy grid. The dataset, result field, and volumetric mesh are connected through side ports. Nested arcs on the left show the dataset splitting into mesh geometry and results; nested arcs on the right show them rejoining. The volumetric mesh forms the apex of an equilateral geometry triangle, above surface and occupancy representations. Directed edges name the mathematical operations between them. Primary file formats appear at the bottom of each block, and a notation key occupies the upper left.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14243a"/>
+      <stop offset="1" stop-color="#0b1423"/>
+    </linearGradient>
+    <linearGradient id="dataset-fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#19324d"/>
+      <stop offset="0.42" stop-color="#19324d"/>
+      <stop offset="0.58" stop-color="#30254c"/>
+      <stop offset="1" stop-color="#30254c"/>
+    </linearGradient>
+    <style>
+      .card { fill: #17283e; stroke: #557592; stroke-width: 2; }
+      .dataset-card { fill: url(#dataset-fill); stroke: #8378b4; stroke-width: 2; }
+      .sidecar { fill: #251f3d; stroke: #9b8bd3; stroke-width: 2; }
+      .node-title { fill: #f5f8ff; font: 700 24px Arial, Helvetica, sans-serif; }
+      .math { fill: #69dfc0; font: italic 21px Georgia, serif; }
+      .note { fill: #b6c7d9; font: 16px Arial, Helvetica, sans-serif; }
+      .formats { fill: #ffb781; font: 700 14px Arial, Helvetica, sans-serif; letter-spacing: .4px; }
+      .legend-title { fill: #ffb781; font: 700 15px Arial, Helvetica, sans-serif; letter-spacing: 1px; }
+      .legend { fill: #b6c7d9; font: 15px Arial, Helvetica, sans-serif; }
+      .legend-symbol { fill: #69dfc0; font: 700 16px Georgia, serif; }
+      .divider { stroke: #304964; stroke-width: 1.5; }
+      .edge { fill: none; stroke: #d3e4ef; stroke-width: 2.4; }
+      .result-edge { fill: none; stroke: #c2b4f9; stroke-width: 2.4; }
+      .arrowhead { fill: #d3e4ef; }
+      .result-arrowhead { fill: #c2b4f9; }
+      .edge-label { fill: #e6edf5; font: 700 15px Arial, Helvetica, sans-serif; }
+      .edge-detail { fill: #b6c7d9; font: 14px Arial, Helvetica, sans-serif; }
+    </style>
+  </defs>
+
+  <rect y="100" width="1400" height="1010" rx="26" fill="url(#background)"/>
+
+  <text x="80" y="128" class="legend-title">NOTATION</text>
+  <text x="80" y="156" class="legend-symbol">D</text>
+  <text x="102" y="156" class="legend">dataset</text>
+  <text x="230" y="156" class="legend-symbol">M</text>
+  <text x="254" y="156" class="legend">mesh geometry</text>
+  <text x="80" y="180" class="legend-symbol">R</text>
+  <text x="102" y="180" class="legend">result field</text>
+  <text x="230" y="180" class="legend-symbol">V</text>
+  <text x="254" y="180" class="legend">vertices</text>
+  <text x="80" y="204" class="legend-symbol">F₂</text>
+  <text x="107" y="204" class="legend">surface faces</text>
+  <text x="230" y="204" class="legend-symbol">C₃</text>
+  <text x="258" y="204" class="legend">volume cells</text>
+  <text x="80" y="228" class="legend-symbol">G</text>
+  <text x="102" y="228" class="legend">occupancy</text>
+  <text x="230" y="228" class="legend-symbol">ℤ³</text>
+  <text x="260" y="228" class="legend">grid indices</text>
+  <text x="80" y="252" class="legend-symbol">∂</text>
+  <text x="102" y="252" class="legend">external boundary</text>
+
+  <rect x="520" y="110" width="360" height="130" rx="17" class="dataset-card"/>
+  <text x="548" y="149" class="node-title">CAE dataset</text>
+  <text x="548" y="182" class="math">D = (M, R)</text>
+  <line x1="548" y1="197" x2="852" y2="197" class="divider"/>
+  <text x="548" y="223" class="formats">VTU · VTK · MSH · EXODUS · FRD</text>
+
+  <rect x="520" y="300" width="360" height="130" rx="17" class="sidecar"/>
+  <text x="548" y="339" class="node-title">Result field</text>
+  <text x="548" y="372" class="math">R(entity ID)</text>
+  <line x1="548" y1="387" x2="852" y2="387" class="divider"/>
+  <text x="548" y="413" class="formats">OP2 · PCH</text>
+
+  <rect x="520" y="490" width="360" height="130" rx="17" class="card"/>
+  <text x="548" y="529" class="node-title">Volumetric mesh</text>
+  <text x="548" y="562" class="math">M₃ = (V, C₃)</text>
+  <line x1="548" y1="577" x2="852" y2="577" class="divider"/>
+  <text x="548" y="603" class="formats">BDF · INP · SU2 · UNV</text>
+
+  <rect x="257" y="945" width="360" height="130" rx="17" class="card"/>
+  <text x="285" y="984" class="node-title">Surface tessellation</text>
+  <text x="285" y="1017" class="math">S = (V, F₂)</text>
+  <line x1="285" y1="1032" x2="589" y2="1032" class="divider"/>
+  <text x="285" y="1058" class="formats">STL</text>
+
+  <rect x="783" y="945" width="360" height="130" rx="17" class="card"/>
+  <text x="811" y="984" class="node-title">Occupancy grid</text>
+  <text x="811" y="1017" class="math">G : ℤ³ → {0, 1}</text>
+  <line x1="811" y1="1032" x2="1115" y2="1032" class="divider"/>
+  <text x="811" y="1058" class="formats">VTI · VOX</text>
+
+  <path d="M504 175 C390 175 390 555 504 555" class="edge"/>
+  <polygon points="495,549 495,561 505,555" class="arrowhead"/>
+  <path d="M504 175 C430 175 430 365 504 365" class="result-edge"/>
+  <polygon points="495,359 495,371 505,365" class="result-arrowhead"/>
+  <text x="370" y="340" class="edge-label" text-anchor="end">D → M₃, R</text>
+  <text x="370" y="359" class="edge-detail" text-anchor="end">split geometry and results</text>
+  <path d="M896 365 C970 365 970 175 896 175" class="result-edge"/>
+  <path d="M896 555 C1010 555 1010 175 896 175" class="result-edge"/>
+  <polygon points="905,169 905,181 895,175" class="result-arrowhead"/>
+  <text x="1030" y="340" class="edge-label">M₃, R → D</text>
+  <text x="1030" y="359" class="edge-detail">join by matching IDs</text>
+
+  <!-- The centers of M3, S, and G form an equilateral triangle. -->
+  <path d="M570 636 L400 929" class="edge"/>
+  <polygon points="400.7,922.9 409.3,917.8 400,929" class="arrowhead"/>
+  <text x="480" y="722" class="edge-label" text-anchor="end">M₃ → S</text>
+  <text x="480" y="741" class="edge-detail" text-anchor="end">extract external boundary ∂M₃</text>
+  <path d="M450 929 L620 636" class="edge"/>
+  <polygon points="619.3,647.2 610.7,642.1 620,636" class="arrowhead"/>
+  <text x="555" y="770" class="edge-label">S → M₃</text>
+  <text x="555" y="789" class="edge-detail">fill closed surface</text>
+  <text x="555" y="808" class="edge-detail">(Tet4 or grid)</text>
+
+  <path d="M830 636 L1000 929" class="edge"/>
+  <polygon points="990.7,922.9 999.3,917.8 1000,929" class="arrowhead"/>
+  <text x="920" y="722" class="edge-label">M₃ → G</text>
+  <text x="920" y="741" class="edge-detail">boundary + voxel-center sampling</text>
+  <path d="M950 929 L780 636" class="edge"/>
+  <polygon points="789.3,642.1 780.7,647.2 780,636" class="arrowhead"/>
+  <text x="845" y="815" class="edge-label" text-anchor="end">G → M₃</text>
+  <text x="845" y="834" class="edge-detail" text-anchor="end">expand occupied cells</text>
+
+  <text x="700" y="954" class="edge-label" text-anchor="middle">S → G</text>
+  <text x="700" y="972" class="edge-detail" text-anchor="middle">sample inside/outside</text>
+  <text x="700" y="989" class="edge-detail" text-anchor="middle">at voxel centers</text>
+  <path d="M633 1003 H767" class="edge"/>
+  <polygon points="758,997 758,1009 768,1003" class="arrowhead"/>
+  <path d="M767 1024 H633" class="edge"/>
+  <polygon points="642,1018 642,1030 632,1024" class="arrowhead"/>
+  <text x="700" y="1052" class="edge-label" text-anchor="middle">G → S</text>
+  <text x="700" y="1070" class="edge-detail" text-anchor="middle">triangulate exposed</text>
+  <text x="700" y="1087" class="edge-detail" text-anchor="middle">voxel faces</text>
+
+</svg>
