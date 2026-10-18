@@ -4,6 +4,8 @@
 | --- | --- |
 | `logo.svg` | Editable CAE Ferris mark used by the repository README. |
 | `conversion-flow.svg` | Editable flowchart of format groups and supported conversion directions. |
+| `mathematical-conversion-map.svg` | User-facing map of packaging and geometry transformations. |
+| `mathematical-conversion-map.tex` | Editable TikZ source for the mathematical conversion map. |
 | `donut-voxel-comparison.png` | Matched-view STL → VTI → STL comparison at three voxel sizes and one smoothed result. |
 | `rustacean-flat-happy.svg` | Retained upstream Ferris artwork. |
 
@@ -39,6 +41,21 @@ supported projections, so it does not promise lossless transfer. Keep its
 accessible title and description current when adapter capabilities change.
 Review it at full size and at the README's typical displayed width.
 The README uses a relative image URL so each branch shows its own diagram.
+
+## Mathematical conversion map
+
+`mathematical-conversion-map.svg` contains five blocks: a CAE dataset, its
+result field, and an equilateral triangle of surface, volume, and occupancy
+representations. The arrows name the supported geometry operations. Each block
+lists its primary file encodings; this is a conceptual grouping rather than a
+replacement for the exact `caexfer formats` capability listing. Result fields
+branch away from geometry transformations and may rejoin only while entity IDs
+still match. Remeshing and voxelization report fields as omitted because
+caexfer does not interpolate results onto new entities.
+
+`mathematical-conversion-map.tex` is a standalone TikZ rendering of the same
+model for papers and slides. Keep both sources semantically aligned when the
+conversion model changes.
 
 ## Donut voxel comparison
 

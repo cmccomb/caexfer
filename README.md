@@ -86,7 +86,11 @@ For scripts, pass the specific `--accept-...` flags named in that list, or use
 
 ## Conversion routes
 
-[![Flowchart of solver inputs, geometry formats, mesh datasets, and companion results connecting through caexfer](https://raw.githubusercontent.com/cmccomb/caexfer/84eb011cc7b7e4214b9e83b2b54016d0f14a149f/assets/conversion-flow.svg)](https://github.com/cmccomb/caexfer/blob/main/assets/conversion-flow.svg)
+The map separates result packaging from geometry transformations. The formats
+shown are representative; `caexfer formats` is authoritative. Remeshing and
+voxelization omit results rather than interpolating them onto new entities.
+
+![Mathematical map of separate and integrated result packaging plus transformations among surface tessellations, volumetric meshes, and occupancy grids](assets/mathematical-conversion-map.svg)
 
 `caexfer formats` lists the current readers and writers. Mesh sources can be
 converted when the destination supports their cell types and data. VTU, legacy

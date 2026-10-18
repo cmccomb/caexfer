@@ -1,0 +1,104 @@
+\documentclass[tikz,border=10pt]{standalone}
+\usepackage{amsmath,amssymb}
+\usetikzlibrary{arrows.meta,positioning}
+
+\definecolor{canvas}{HTML}{0B1423}
+\definecolor{card}{HTML}{17283E}
+\definecolor{stroke}{HTML}{557592}
+\definecolor{ink}{HTML}{F5F8FF}
+\definecolor{muted}{HTML}{B6C7D9}
+\definecolor{mint}{HTML}{69DFC0}
+\definecolor{orange}{HTML}{FFB781}
+\definecolor{violet}{HTML}{C2B4F9}
+\definecolor{datasetblue}{HTML}{19324D}
+\definecolor{datasetviolet}{HTML}{30254C}
+
+\tikzset{
+  >=Stealth,
+  card/.style={draw=stroke,fill=card,rounded corners=3mm,line width=.8pt,
+    minimum width=51mm,minimum height=19mm,align=left,inner sep=4mm},
+  dataset card/.style={card,left color=datasetblue,right color=datasetviolet,
+    shading angle=-25,draw=stroke!35!violet},
+  sidecar/.style={card,draw=violet,fill=violet!12!canvas},
+  flow/.style={->,draw=ink!85,line width=.9pt},
+  result/.style={->,draw=violet,line width=.9pt},
+  edge label/.style={font=\sffamily\scriptsize\bfseries,text=ink,align=center,
+    fill=canvas,inner sep=1.2pt},
+  note/.style={font=\sffamily\scriptsize,text=muted,align=center},
+}
+
+\newcommand{\formatline}[1]{\\[1mm]\rule{43mm}{.2pt}\\[-1mm]
+  {\scriptsize\bfseries\textcolor{orange}{#1}}}
+
+\begin{document}
+\begin{tikzpicture}[x=1mm,y=1mm]
+  \fill[canvas,rounded corners=5mm] (0,0) rectangle (210,180);
+
+  \node[font=\sffamily\scriptsize,text=muted,align=left,anchor=north west]
+    at (10,175) {\textcolor{orange}{\textbf{NOTATION}}\\[1mm]
+    \textcolor{mint}{$D$} dataset\hspace{8mm}\textcolor{mint}{$M$} mesh geometry\\
+    \textcolor{mint}{$R$} result field\hspace{4.7mm}\textcolor{mint}{$V$} vertices\\
+    \textcolor{mint}{$F_2$} surface faces\hspace{2mm}\textcolor{mint}{$C_3$} volume cells\\
+    \textcolor{mint}{$G$} occupancy\hspace{5.4mm}\textcolor{mint}{$\mathbb Z^3$} grid indices\\
+    \textcolor{mint}{$\partial$} external boundary};
+
+  \node[dataset card] (dataset) at (105,165) {
+    \textbf{\textcolor{ink}{CAE dataset}}\\
+    \textcolor{mint}{$D=(M,R)$}
+    \formatline{VTU · VTK · MSH · EXODUS · FRD}
+  };
+  \node[sidecar] (results) at (105,135) {
+    \textbf{\textcolor{ink}{Result field}}\\
+    \textcolor{mint}{$R(\text{entity ID})$}
+    \formatline{OP2 · PCH}
+  };
+  \node[card] (volume) at (105,105) {
+    \textbf{\textcolor{ink}{Volumetric mesh}}\\
+    \textcolor{mint}{$M_3=(V,C_3)$}
+    \formatline{BDF · INP · SU2 · UNV}
+  };
+  \node[card] (surface) at (65,35) {
+    \textbf{\textcolor{ink}{Surface tessellation}}\\
+    \textcolor{mint}{$S=(V,F_2)$}
+    \formatline{STL}
+  };
+  \node[card] (grid) at (145,35) {
+    \textbf{\textcolor{ink}{Occupancy grid}}\\
+    \textcolor{mint}{$G:\mathbb Z^3\to\{0,1\}$}
+    \formatline{VTI · VOX}
+  };
+
+  \coordinate (datasetleft) at ($(dataset.west)+(-2,0)$);
+  \coordinate (datasetright) at ($(dataset.east)+(2,0)$);
+  \coordinate (resultleft) at ($(results.west)+(-2,0)$);
+  \coordinate (resultright) at ($(results.east)+(2,0)$);
+  \coordinate (volumeleft) at ($(volume.west)+(-2,0)$);
+  \coordinate (volumeright) at ($(volume.east)+(2,0)$);
+  \draw[flow] (datasetleft) .. controls (57,165) and (57,105) .. (volumeleft);
+  \draw[result] (datasetleft) .. controls (65,165) and (65,135) .. (resultleft);
+  \draw[result] (resultright) .. controls (145,135) and (145,165) .. (datasetright);
+  \draw[result] (volumeright) .. controls (153,105) and (153,165) .. (datasetright);
+  \node[edge label,anchor=east] at (54,135)
+    {$D\to M_3,R$\\\normalfont split geometry and results};
+  \node[edge label,anchor=west] at (156,135)
+    {$M_3,R\to D$\\\normalfont join by matching IDs};
+
+  \draw[flow] ($(volume.south west)+(5,0)$) -- ($(surface.north east)+(-15,0)$);
+  \draw[flow] ($(surface.north east)+(-5,0)$) -- ($(volume.south west)+(12,0)$);
+  \draw[flow] ($(volume.south east)+(-5,0)$) -- ($(grid.north west)+(15,0)$);
+  \draw[flow] ($(grid.north west)+(5,0)$) -- ($(volume.south east)+(-12,0)$);
+  \node[edge label,anchor=east] at (76,82)
+    {$M_3\to S$\\\normalfont external boundary $\partial M_3$};
+  \node[edge label,anchor=west] at (88,71)
+    {$S\to M_3$\\\normalfont fill closed surface\\\normalfont (Tet4 or grid)};
+  \node[edge label,anchor=west] at (134,82)
+    {$M_3\to G$\\\normalfont boundary + center sampling};
+  \node[edge label,anchor=east] at (122,63)
+    {$G\to M_3$\\\normalfont expand occupied cells};
+  \draw[flow] ($(surface.east)+(0,3)$) -- node[edge label,above]{$S\to G$\\\normalfont sample inside/outside\\\normalfont at voxel centers}
+    ($(grid.west)+(0,3)$);
+  \draw[flow] ($(grid.west)+(0,-3)$) -- node[edge label,below]{$G\to S$\\\normalfont triangulate exposed\\\normalfont faces}
+    ($(surface.east)+(0,-3)$);
+
+\end{tikzpicture}
+\end{document}
